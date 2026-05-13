@@ -7,12 +7,14 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /memorialiste ./cmd/memorialiste
 
 # Stage 2: install Python deps
-# distroless/python3-debian12 ships Python 3.11, so we match that here
+# distroless/python3-debian12 ships Python 3.11, so we match that here.
+# The pinned trio below is the known-working combo for grep-ast's TreeContext
+# rich rendering API. Newer versions break the TreeContext code path.
 FROM python:3.11-slim AS python-deps
-# tree-sitter-language-pack provides the process()-based structure API we use
-# in context/ast.go. grep-ast 0.9.0 is no longer used because its TreeContext
-# is broken against tree-sitter-language-pack 1.8.0 (Rust Parser has no .parse).
-RUN pip install --no-cache-dir tree-sitter-language-pack==1.8.0
+RUN pip install --no-cache-dir \
+    "tree-sitter==0.20.4" \
+    "tree-sitter-languages==1.10.2" \
+    "grep-ast==0.5.0"
 
 # Stage 3: distroless runtime — no shell, no package manager, minimal attack surface
 FROM gcr.io/distroless/python3-debian12

@@ -47,15 +47,15 @@ func TestEnrichDiff_Disabled_DiffUnchanged(t *testing.T) {
 func TestEnrichDiff_Enabled_HeadersAdded(t *testing.T) {
 	ann := &fake.Annotator{
 		AnnotateFunc: func(_ context.Context, filePath string, _ []int) (mctx.ASTAnnotation, error) {
-			return mctx.ASTAnnotation{FilePath: filePath, Scopes: []string{"FuncA"}}, nil
+			return mctx.ASTAnnotation{FilePath: filePath, Rendered: "RENDERED OUTPUT"}, nil
 		},
 	}
 
 	enriched, ok, err := mctx.ExportedEnrichDiff(context.Background(), "/repo", sampleDiff, ann)
 	require.NoError(t, err)
 	assert.True(t, ok)
-	assert.Contains(t, enriched, "=== internal/foo.go [FuncA] ===")
-	assert.Contains(t, enriched, "=== internal/bar.go [FuncA] ===")
+	assert.Contains(t, enriched, "=== internal/foo.go ===\nRENDERED OUTPUT")
+	assert.Contains(t, enriched, "=== internal/bar.go ===\nRENDERED OUTPUT")
 }
 
 func TestEnrichDiff_FallbackAnnotation_PlainHeader(t *testing.T) {
@@ -65,44 +65,8 @@ func TestEnrichDiff_FallbackAnnotation_PlainHeader(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Contains(t, enriched, "=== internal/foo.go ===")
-	assert.NotContains(t, enriched, "[")
-}
-
-func TestEnrichDiff_FileLevel_PackageLevelAnnotation(t *testing.T) {
-	ann := &fake.Annotator{
-		AnnotateFunc: func(_ context.Context, filePath string, _ []int) (mctx.ASTAnnotation, error) {
-			return mctx.ASTAnnotation{FilePath: filePath, FileLevel: true}, nil
-		},
-	}
-
-	enriched, ok, err := mctx.ExportedEnrichDiff(context.Background(), "/repo", sampleDiff, ann)
-	require.NoError(t, err)
-	assert.True(t, ok)
-	assert.Contains(t, enriched, "(package-level)")
-}
-
-func TestEnrichDiff_SameFunctionMultipleHunks_DeduplicatedInHeader(t *testing.T) {
-	multiHunkDiff := `diff --git a/internal/foo.go b/internal/foo.go
-index 0000000..1111111 100644
---- a/internal/foo.go
-+++ b/internal/foo.go
-@@ -5,3 +5,4 @@ func Foo() {
-+	a := 1
-@@ -20,3 +21,4 @@ func Foo() {
-+	b := 2
-`
-	callCount := 0
-	ann := &fake.Annotator{
-		AnnotateFunc: func(_ context.Context, filePath string, _ []int) (mctx.ASTAnnotation, error) {
-			callCount++
-			return mctx.ASTAnnotation{FilePath: filePath, Scopes: []string{"Foo"}}, nil
-		},
-	}
-
-	enriched, _, err := mctx.ExportedEnrichDiff(context.Background(), "/repo", multiHunkDiff, ann)
-	require.NoError(t, err)
-	// "Foo" should appear only once in the header, not twice.
-	assert.Equal(t, 1, countOccurrences(enriched, "[Foo]"))
+	// Fallback emits the raw diff body after the header.
+	assert.Contains(t, enriched, "diff --git a/internal/foo.go b/internal/foo.go")
 }
 
 // ── T011: US2 fallback tests ──────────────────────────────────────────────────
@@ -139,16 +103,4 @@ func TestAssemble_ASTContextFalse_IdenticalToBaseline(t *testing.T) {
 	assert.Equal(t, baseline.Diff, withFlag.Diff)
 	assert.Equal(t, baseline.ASTEnriched, withFlag.ASTEnriched)
 	assert.False(t, withFlag.ASTEnriched)
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-func countOccurrences(s, substr string) int {
-	count := 0
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			count++
-		}
-	}
-	return count
 }

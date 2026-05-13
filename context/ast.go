@@ -14,12 +14,10 @@ import (
 type ASTAnnotation struct {
 	// FilePath is the repo-relative path of the file.
 	FilePath string
-	// Scopes contains the deduplicated names of functions or methods that
-	// contain at least one changed line.
-	Scopes []string
-	// FileLevel is true when at least one changed line falls outside any
-	// named function.
-	FileLevel bool
+	// Rendered is the full grep-ast TreeContext rendering of the file with
+	// changed lines marked. Empty when the file is unsupported or the
+	// renderer failed — callers should fall back to the raw diff in that case.
+	Rendered string
 }
 
 // ASTAnnotator determines which functions contain the changed lines of a file.
@@ -31,7 +29,8 @@ type ASTAnnotator interface {
 	Annotate(ctx context.Context, filePath string, changedLines []int) (ASTAnnotation, error)
 }
 
-// grepASTAnnotator invokes the grep-ast CLI to determine function scopes.
+// grepASTAnnotator invokes grep-ast's TreeContext via a Python helper to
+// render a structural view of the file with changed lines marked.
 type grepASTAnnotator struct {
 	repoPath string
 }
@@ -40,70 +39,54 @@ const astTimeout = 10 * time.Second
 
 func (g *grepASTAnnotator) Annotate(ctx context.Context, filePath string, changedLines []int) (ASTAnnotation, error) {
 	ann := ASTAnnotation{FilePath: filePath}
-	seen := map[string]struct{}{}
+
+	if len(changedLines) == 0 {
+		return ann, nil
+	}
 
 	absPath := filePath
 	if !strings.HasPrefix(filePath, "/") {
 		absPath = g.repoPath + "/" + filePath
 	}
 
-	for _, line := range changedLines {
-		tctx, cancel := context.WithTimeout(ctx, astTimeout)
-		scopes, fileLevel, err := runGrepAST(tctx, absPath, line)
-		cancel()
-		if err != nil {
-			// timeout or binary unavailable — return empty annotation
-			return ASTAnnotation{FilePath: filePath}, nil
-		}
-		if fileLevel {
-			ann.FileLevel = true
-		}
-		for _, s := range scopes {
-			if _, ok := seen[s]; !ok {
-				seen[s] = struct{}{}
-				ann.Scopes = append(ann.Scopes, s)
-			}
-		}
+	tctx, cancel := context.WithTimeout(ctx, astTimeout)
+	defer cancel()
+
+	rendered, err := runGrepAST(tctx, absPath, changedLines)
+	if err != nil {
+		// timeout, parser unavailable, unsupported language — return empty.
+		return ASTAnnotation{FilePath: filePath}, nil
 	}
+	ann.Rendered = rendered
 	return ann, nil
 }
 
-// runGrepAST analyses absPath with tree-sitter-language-pack and returns
-// the names of functions/methods that enclose lineNum (1-based).
-// If no function encloses the line, fileLevel is true.
+// runGrepAST renders absPath using grep-ast's TreeContext with changedLines
+// (1-based) marked as lines of interest. Returns the rendered output.
 //
-// We invoke Python because tree-sitter-language-pack ships only Python
-// bindings. grep-ast 0.9.0's TreeContext is broken against
-// tree-sitter-language-pack 1.8.0 (the Rust-native Parser lacks .parse()),
-// so we call the package's process() API directly which exposes a structured
-// view of the file (functions, methods, spans) without needing a Parser.
-func runGrepAST(ctx context.Context, absPath string, lineNum int) (scopes []string, fileLevel bool, err error) {
+// grep-ast 0.5.0 with tree-sitter 0.20.4 + tree-sitter-languages 1.10.2 is the
+// known-working pinned combo; newer versions break TreeContext.
+func runGrepAST(ctx context.Context, absPath string, changedLines []int) (string, error) {
+	// Build a Python list literal of 0-indexed line numbers.
+	var lineParts []string
+	for _, l := range changedLines {
+		lineParts = append(lineParts, fmt.Sprintf("%d", l-1))
+	}
+	linesLit := "[" + strings.Join(lineParts, ", ") + "]"
+
 	script := fmt.Sprintf(`
 import sys
 try:
-    import tree_sitter_language_pack as tlp
-    def walk(items, line0, out):
-        for it in items:
-            s = it.span
-            if s.start_line <= line0 <= s.end_line:
-                k = str(it.kind)
-                if k in ('Function', 'Method') and it.name:
-                    out.append(it.name)
-                if it.children:
-                    walk(it.children, line0, out)
+    from grep_ast import TreeContext
     code = open(%q, encoding='utf-8', errors='replace').read()
-    result = tlp.process(code, tlp.ProcessConfig(language='go', structure=True))
-    scopes = []
-    walk(result.structure, %d - 1, scopes)
-    if scopes:
-        for s in scopes:
-            print('SCOPE: ' + s)
-    else:
-        print('FILE_LEVEL')
+    tc = TreeContext(%q, code, color=False, line_number=True)
+    tc.add_lines_of_interest(%s)
+    tc.add_context()
+    sys.stdout.write(tc.format())
 except Exception as e:
     sys.stderr.write(str(e)+"\n")
     sys.exit(1)
-`, absPath, lineNum)
+`, absPath, absPath, linesLit)
 
 	cmd := exec.CommandContext(ctx, "python3", "-c", script)
 	var out bytes.Buffer
@@ -112,41 +95,16 @@ except Exception as e:
 	cmd.Stderr = &errBuf
 
 	if err := cmd.Run(); err != nil {
-		return nil, false, fmt.Errorf("grep-ast: %w", err)
+		return "", fmt.Errorf("grep-ast: %w (stderr: %s)", err, errBuf.String())
 	}
 
-	return parseGrepASTOutput(out.String(), lineNum)
+	return out.String(), nil
 }
 
-// parseGrepASTOutput parses the simple line-oriented output produced by the
-// Python AST helper. Each enclosing scope is reported as a "SCOPE: <name>"
-// line; if no function encloses the queried line, the helper prints
-// "FILE_LEVEL".
-func parseGrepASTOutput(output string, _ int) (scopes []string, fileLevel bool, err error) {
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	seen := map[string]struct{}{}
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		switch {
-		case line == "FILE_LEVEL":
-			fileLevel = true
-		case strings.HasPrefix(line, "SCOPE:"):
-			name := strings.TrimSpace(strings.TrimPrefix(line, "SCOPE:"))
-			if name == "" {
-				continue
-			}
-			if _, ok := seen[name]; !ok {
-				seen[name] = struct{}{}
-				scopes = append(scopes, name)
-			}
-		}
-	}
-
-	return scopes, fileLevel, nil
-}
-
-// enrichDiff enriches rawDiff with AST scope headers per file.
+// enrichDiff enriches rawDiff with per-file AST rendering. When a file's
+// annotation has non-empty Rendered, the rendering replaces the raw diff
+// hunks for that file (TreeContext already shows changed lines in context).
+// Otherwise the raw diff is emitted as-is.
 // Returns the enriched diff text, whether any file was enriched, and any error.
 func enrichDiff(ctx context.Context, repoPath string, rawDiff string, annotator ASTAnnotator) (string, bool, error) {
 	files := parseDiffFiles(rawDiff)
@@ -163,15 +121,18 @@ func enrichDiff(ctx context.Context, repoPath string, rawDiff string, annotator 
 			return "", false, err
 		}
 
-		header := buildHeader(f.path, ann)
-		enriched := len(ann.Scopes) > 0 || ann.FileLevel
-		if enriched {
+		sb.WriteString("=== ")
+		sb.WriteString(f.path)
+		sb.WriteString(" ===\n")
+		if ann.Rendered != "" {
 			anyEnriched = true
+			sb.WriteString(ann.Rendered)
+			if !strings.HasSuffix(ann.Rendered, "\n") {
+				sb.WriteString("\n")
+			}
+		} else {
+			sb.WriteString(f.raw)
 		}
-
-		sb.WriteString(header)
-		sb.WriteString("\n")
-		sb.WriteString(f.raw)
 	}
 
 	return sb.String(), anyEnriched, nil
@@ -198,7 +159,6 @@ func parseDiffFiles(diff string) []diffFile {
 			if cur != nil {
 				files = append(files, *cur)
 			}
-			// Extract b-side filename: "diff --git a/foo b/foo" → "foo"
 			parts := strings.Fields(line)
 			path := ""
 			if len(parts) >= 4 {
@@ -215,7 +175,6 @@ func parseDiffFiles(diff string) []diffFile {
 
 		cur.raw += line + "\n"
 
-		// Track current line position from @@ hunk headers.
 		if strings.HasPrefix(line, "@@ ") {
 			lineNum = parseHunkStart(line)
 			continue
@@ -238,7 +197,6 @@ func parseDiffFiles(diff string) []diffFile {
 // parseHunkStart extracts the starting line number of the +++ side from a
 // unified diff hunk header like "@@ -1,4 +10,6 @@ func Foo()".
 func parseHunkStart(line string) int {
-	// Format: @@ -a,b +c,d @@
 	plus := strings.Index(line, " +")
 	if plus < 0 {
 		return 0
@@ -252,16 +210,4 @@ func parseHunkStart(line string) int {
 	n := 0
 	fmt.Sscanf(numStr, "%d", &n)
 	return n
-}
-
-func buildHeader(path string, ann ASTAnnotation) string {
-	if len(ann.Scopes) == 0 && !ann.FileLevel {
-		return "=== " + path + " ==="
-	}
-	parts := make([]string, 0, len(ann.Scopes)+1)
-	parts = append(parts, ann.Scopes...)
-	if ann.FileLevel {
-		parts = append(parts, "(package-level)")
-	}
-	return "=== " + path + " [" + strings.Join(parts, ", ") + "] ==="
 }
