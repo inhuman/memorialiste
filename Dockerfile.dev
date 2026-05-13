@@ -1,0 +1,12 @@
+# Dev image for debugging grep-ast/tree-sitter-language-pack API
+FROM golang:1.26-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY vendor/ vendor/
+COPY . .
+RUN CGO_ENABLED=0 go build -o /memorialiste ./cmd/memorialiste
+
+FROM python:3.11-slim
+RUN pip install --no-cache-dir tree-sitter-language-pack==1.8.0
+COPY --from=builder /memorialiste /usr/local/bin/memorialiste
+CMD ["/bin/bash"]

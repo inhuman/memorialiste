@@ -68,29 +68,42 @@ func (g *grepASTAnnotator) Annotate(ctx context.Context, filePath string, change
 	return ann, nil
 }
 
-// runGrepAST runs `grep-ast --no-color -n <lineNum> <file>` and parses
-// the enclosing function names from the output.
+// runGrepAST analyses absPath with tree-sitter-language-pack and returns
+// the names of functions/methods that enclose lineNum (1-based).
+// If no function encloses the line, fileLevel is true.
+//
+// We invoke Python because tree-sitter-language-pack ships only Python
+// bindings. grep-ast 0.9.0's TreeContext is broken against
+// tree-sitter-language-pack 1.8.0 (the Rust-native Parser lacks .parse()),
+// so we call the package's process() API directly which exposes a structured
+// view of the file (functions, methods, spans) without needing a Parser.
 func runGrepAST(ctx context.Context, absPath string, lineNum int) (scopes []string, fileLevel bool, err error) {
-	// grep-ast matches by pattern; use the line number as a line-number grep
-	// via the -n flag is not a line filter — we pass a pattern that matches
-	// everything and filter by line number ourselves using the output format.
-	// Simpler: grep-ast accepts a pattern; pass "." (matches any line) and
-	// use --no-color output to find the enclosing func for our line.
-	// We use a Python one-liner to call TreeContext directly and get the
-	// scope for the specific line.
 	script := fmt.Sprintf(`
 import sys
 try:
-    from grep_ast.grep_ast import TreeContext
+    import tree_sitter_language_pack as tlp
+    def walk(items, line0, out):
+        for it in items:
+            s = it.span
+            if s.start_line <= line0 <= s.end_line:
+                k = str(it.kind)
+                if k in ('Function', 'Method') and it.name:
+                    out.append(it.name)
+                if it.children:
+                    walk(it.children, line0, out)
     code = open(%q, encoding='utf-8', errors='replace').read()
-    tc = TreeContext(%q, code, color=False, verbose=False, line_number=True)
-    tc.add_lines_of_interest([%d])
-    tc.add_context()
-    print(tc.format())
+    result = tlp.process(code, tlp.ProcessConfig(language='go', structure=True))
+    scopes = []
+    walk(result.structure, %d - 1, scopes)
+    if scopes:
+        for s in scopes:
+            print('SCOPE: ' + s)
+    else:
+        print('FILE_LEVEL')
 except Exception as e:
     sys.stderr.write(str(e)+"\n")
     sys.exit(1)
-`, absPath, absPath, lineNum)
+`, absPath, lineNum)
 
 	cmd := exec.CommandContext(ctx, "python3", "-c", script)
 	var out bytes.Buffer
@@ -105,60 +118,32 @@ except Exception as e:
 	return parseGrepASTOutput(out.String(), lineNum)
 }
 
-// parseGrepASTOutput extracts function names from grep-ast text output.
-// grep-ast output looks like:
-//
-//	context/diff.go:
-//	│ func computeDiff(...) {
-//	│ ...
+// parseGrepASTOutput parses the simple line-oriented output produced by the
+// Python AST helper. Each enclosing scope is reported as a "SCOPE: <name>"
+// line; if no function encloses the queried line, the helper prints
+// "FILE_LEVEL".
 func parseGrepASTOutput(output string, _ int) (scopes []string, fileLevel bool, err error) {
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	seen := map[string]struct{}{}
-	foundFunc := false
 
 	for scanner.Scan() {
-		line := scanner.Text()
-		// Strip tree-drawing characters and leading whitespace.
-		clean := strings.TrimLeft(line, "│├└─ \t")
-		if strings.HasPrefix(clean, "func ") || strings.Contains(clean, ") ") && strings.HasPrefix(clean, "func ") {
-			name := extractFuncName(clean)
-			if name != "" {
-				if _, ok := seen[name]; !ok {
-					seen[name] = struct{}{}
-					scopes = append(scopes, name)
-				}
-				foundFunc = true
+		line := strings.TrimSpace(scanner.Text())
+		switch {
+		case line == "FILE_LEVEL":
+			fileLevel = true
+		case strings.HasPrefix(line, "SCOPE:"):
+			name := strings.TrimSpace(strings.TrimPrefix(line, "SCOPE:"))
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				scopes = append(scopes, name)
 			}
 		}
 	}
 
-	if !foundFunc && output != "" {
-		fileLevel = true
-	}
 	return scopes, fileLevel, nil
-}
-
-// extractFuncName extracts the function or method name from a Go func declaration line.
-func extractFuncName(line string) string {
-	// Handles: "func Foo(...)" and "func (r *Receiver) Bar(...)"
-	after, ok := strings.CutPrefix(line, "func ")
-	if !ok {
-		return ""
-	}
-	// Skip receiver: "(r *Receiver) Bar" → "Bar"
-	if strings.HasPrefix(after, "(") {
-		close := strings.Index(after, ")")
-		if close < 0 {
-			return ""
-		}
-		after = strings.TrimSpace(after[close+1:])
-	}
-	// Take up to first "(" — that's the function name.
-	paren := strings.IndexByte(after, '(')
-	if paren < 0 {
-		return strings.TrimSpace(after)
-	}
-	return strings.TrimSpace(after[:paren])
 }
 
 // enrichDiff enriches rawDiff with AST scope headers per file.
