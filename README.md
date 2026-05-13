@@ -85,7 +85,6 @@ The Docker image includes:
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| `grep-ast` | 0.8.4 | AST-enriched diff context (`--ast-context`) |
-| `tree-sitter-language-pack` | 0.3.4 | Language grammars for grep-ast |
+| `grep-ast` | 0.9.0 | AST-enriched diff context (`--ast-context`) |
 
 These are only used when `--ast-context` is enabled.
