@@ -1,8 +1,7 @@
 // Command memorialiste updates documentation from git diffs using an LLM.
 //
-// This is a minimal CLI scaffold — it wires manifest → context → generate
-// and writes output to disk. Full flag coverage, platform integration
-// (GitLab/GitHub MR/PR), and commit creation are still pending (US3 + US4).
+// Pipeline: manifest → context (diff + AST) → generate (LLM) → output (write + commit).
+// Platform integration (pushing branches, opening MR/PR) is pending (US4).
 package main
 
 import (
@@ -11,12 +10,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 
 	mctx "github.com/inhuman/memorialiste/context"
 	"github.com/inhuman/memorialiste/generate"
 	"github.com/inhuman/memorialiste/manifest"
+	"github.com/inhuman/memorialiste/output"
 	"github.com/inhuman/memorialiste/provider/openai"
 )
 
@@ -33,13 +32,10 @@ func main() {
 		apiKey       = flag.String("api-key", "", "Bearer token for the LLM provider (optional)")
 		tokenBudget  = flag.Int("token-budget", 12000, "Max tokens for diff context before summarisation")
 		astContext   = flag.Bool("ast-context", false, "Enable AST-enriched diff context via grep-ast")
-		dryRun       = flag.Bool("dry-run", true, "Write files locally; skip commit/MR (always true in this MVP build)")
+		dryRun       = flag.Bool("dry-run", true, "Write files locally; skip branch+commit when true")
+		branchPrefix = flag.String("branch-prefix", output.DefaultBranchPrefix, "Prefix for the auto-generated branch name")
 	)
 	flag.Parse()
-
-	if !*dryRun {
-		log.Println("warning: only --dry-run is supported in this build; behaving as if --dry-run=true")
-	}
 
 	ctx := context.Background()
 
@@ -58,11 +54,13 @@ func main() {
 		ModelParams: json.RawMessage(*modelParams),
 	})
 
-	// Process each doc entry
+	// Collect generated entries for output.Apply
+	var entries []output.Entry
+
 	for i, entry := range m.Docs {
 		entryPath := entry.Path
 		if !filepath.IsAbs(entryPath) {
-			entryPath = filepath.Join(*repoPath, entryPath)
+			entryPath = filepath.Join(*repoPath, entry.Path)
 		}
 
 		log.Printf("[%d/%d] %s — assembling context", i+1, len(m.Docs), entry.Path)
@@ -102,15 +100,28 @@ func main() {
 			i+1, len(m.Docs), len(result.Content),
 			result.TokenUsage.PromptTokens, result.TokenUsage.CompletionTokens, result.TokenUsage.TotalTokens)
 
-		// Write output with new frontmatter
-		final := mctx.WriteFrontmatter(result.Content, dc.HeadSHA)
-		if err := os.MkdirAll(filepath.Dir(entryPath), 0o755); err != nil {
-			log.Fatalf("mkdir for %q: %v", entryPath, err)
-		}
-		if err := os.WriteFile(entryPath, []byte(final), 0o644); err != nil {
-			log.Fatalf("write %q: %v", entryPath, err)
-		}
-		log.Printf("[%d/%d] wrote %s", i+1, len(m.Docs), entry.Path)
+		entries = append(entries, output.Entry{
+			Path:    entry.Path,
+			Body:    result.Content,
+			HeadSHA: dc.HeadSHA,
+		})
+	}
+
+	// Output stage: write files + (when not dry-run) branch + commit
+	res, err := output.Apply(ctx, output.Options{
+		RepoPath:     *repoPath,
+		DryRun:       *dryRun,
+		BranchPrefix: *branchPrefix,
+	}, entries)
+	if err != nil {
+		log.Fatalf("output: %v", err)
+	}
+
+	log.Printf("wrote %d files (skipped %d)", len(res.WrittenFiles), len(res.SkippedEntries))
+	if res.BranchName != "" {
+		log.Printf("created branch %s with commit %s", res.BranchName, res.CommitSHA[:8])
+	} else if !*dryRun && len(res.WrittenFiles) == 0 {
+		log.Printf("nothing to update — no branch created")
 	}
 
 	fmt.Println("done")
