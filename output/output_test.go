@@ -1,0 +1,262 @@
+package output_test
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/inhuman/memorialiste/output"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+func initRepoWithCommit(t *testing.T) (*gogit.Repository, string) {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := gogit.PlainInit(dir, false)
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("# repo\n"), 0o644))
+	_, err = wt.Add("README.md")
+	require.NoError(t, err)
+	_, err = wt.Commit("init", &gogit.CommitOptions{
+		Author: &object.Signature{Name: "x", Email: "x@x", When: time.Now()},
+	})
+	require.NoError(t, err)
+	return repo, dir
+}
+
+func fixedClock(ts string) func() time.Time {
+	t, _ := time.Parse("20060102-150405", ts)
+	return func() time.Time { return t }
+}
+
+// ── US1: write path ───────────────────────────────────────────────────────────
+
+func TestApply_WritesFileWithFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	res, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   true, // we only care about the write here
+	}, []output.Entry{
+		{Path: "docs/foo.md", Body: "# Body", HeadSHA: "abc1234"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"docs/foo.md"}, res.WrittenFiles)
+
+	content, err := os.ReadFile(filepath.Join(dir, "docs/foo.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "---\ngenerated_at: abc1234\n---\n\n# Body", string(content))
+}
+
+func TestApply_CreatesMissingParentDir(t *testing.T) {
+	dir := t.TempDir()
+	_, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   true,
+	}, []output.Entry{
+		{Path: "deeply/nested/dir/foo.md", Body: "x", HeadSHA: "sha"},
+	})
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dir, "deeply/nested/dir/foo.md"))
+	require.NoError(t, err)
+}
+
+func TestApply_EmptyBody_Skipped(t *testing.T) {
+	dir := t.TempDir()
+	res, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   true,
+	}, []output.Entry{
+		{Path: "docs/empty.md", Body: "", HeadSHA: "sha"},
+		{Path: "docs/ok.md", Body: "ok", HeadSHA: "sha"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"docs/ok.md"}, res.WrittenFiles)
+	require.Len(t, res.SkippedEntries, 1)
+	assert.Equal(t, "docs/empty.md", res.SkippedEntries[0].Path)
+	assert.Equal(t, "empty body", res.SkippedEntries[0].Reason)
+	_, err = os.Stat(filepath.Join(dir, "docs/empty.md"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestApply_EmptyEntries_NoError(t *testing.T) {
+	dir := t.TempDir()
+	res, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   false,
+	}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, res.WrittenFiles)
+	assert.Empty(t, res.BranchName)
+	assert.Empty(t, res.CommitSHA)
+}
+
+func TestApply_DryRunWritesButDoesntCommit(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+	origHead := headRef.Hash()
+
+	res, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   true,
+	}, []output.Entry{
+		{Path: "docs/x.md", Body: "x", HeadSHA: origHead.String()},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"docs/x.md"}, res.WrittenFiles)
+	assert.Empty(t, res.BranchName)
+	assert.Empty(t, res.CommitSHA)
+
+	// HEAD should still be the original
+	headAfter, _ := repo.Head()
+	assert.Equal(t, origHead, headAfter.Hash())
+	// File on disk exists
+	_, err = os.Stat(filepath.Join(dir, "docs/x.md"))
+	require.NoError(t, err)
+}
+
+// ── US2: commit path ──────────────────────────────────────────────────────────
+
+func TestApply_NonDryRun_CreatesBranchAndCommit(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+	origHead := headRef.Hash()
+
+	res, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   false,
+		Now:      fixedClock("20260514-093412"),
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: origHead.String()},
+		{Path: "docs/b.md", Body: "B", HeadSHA: origHead.String()},
+	})
+	require.NoError(t, err)
+
+	// Branch name format
+	expected := output.DefaultBranchPrefix + "20260514-093412-" + origHead.String()[:7]
+	assert.Equal(t, expected, res.BranchName)
+	assert.NotEmpty(t, res.CommitSHA)
+	assert.Equal(t, []string{"docs/a.md", "docs/b.md"}, res.WrittenFiles)
+
+	// Worktree is on new branch, new commit
+	headAfter, _ := repo.Head()
+	assert.NotEqual(t, origHead, headAfter.Hash())
+	assert.Equal(t, res.CommitSHA, headAfter.Hash().String())
+
+	// Verify commit contains both files
+	commit, err := repo.CommitObject(headAfter.Hash())
+	require.NoError(t, err)
+	tree, _ := commit.Tree()
+	_, errA := tree.File("docs/a.md")
+	_, errB := tree.File("docs/b.md")
+	require.NoError(t, errA)
+	require.NoError(t, errB)
+}
+
+func TestApply_CustomBranchPrefix(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+
+	res, err := output.Apply(context.Background(), output.Options{
+		RepoPath:     dir,
+		BranchPrefix: "chore/auto-docs-",
+		Now:          fixedClock("20260514-100000"),
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String()},
+	})
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(res.BranchName, "chore/auto-docs-"),
+		"branch=%q", res.BranchName)
+}
+
+func TestApply_BranchCollision_ErrBranchExists(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+	clock := fixedClock("20260514-110000")
+	expectedBranch := output.DefaultBranchPrefix + "20260514-110000-" + headRef.Hash().String()[:7]
+
+	// Pre-create the colliding branch
+	require.NoError(t, repo.Storer.SetReference(
+		plumbing.NewHashReference(plumbing.NewBranchReferenceName(expectedBranch), headRef.Hash()),
+	))
+
+	_, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		Now:      clock,
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String()},
+	})
+	require.Error(t, err)
+	var brErr *output.ErrBranchExists
+	require.True(t, errors.As(err, &brErr))
+	assert.Equal(t, expectedBranch, brErr.Name)
+}
+
+func TestApply_CommitMessageStructure(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+	shortSHA := headRef.Hash().String()[:7]
+
+	_, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		Now:      fixedClock("20260514-120000"),
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String()},
+		{Path: "docs/b.md", Body: "B", HeadSHA: headRef.Hash().String()},
+	})
+	require.NoError(t, err)
+
+	headAfter, _ := repo.Head()
+	commit, err := repo.CommitObject(headAfter.Hash())
+	require.NoError(t, err)
+
+	subject := "docs: update documentation to " + shortSHA
+	assert.Contains(t, commit.Message, subject)
+	assert.Contains(t, commit.Message, "Updated files:")
+	assert.Contains(t, commit.Message, "- docs/a.md")
+	assert.Contains(t, commit.Message, "- docs/b.md")
+}
+
+func TestApply_UnrelatedChangesPreserved(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+
+	// User makes an unrelated change before running memorialiste
+	unrelatedPath := filepath.Join(dir, "src.go")
+	require.NoError(t, os.WriteFile(unrelatedPath, []byte("package main\n"), 0o644))
+
+	_, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		Now:      fixedClock("20260514-130000"),
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String()},
+	})
+	require.NoError(t, err)
+
+	// Unrelated file still exists in working tree
+	_, err = os.Stat(unrelatedPath)
+	require.NoError(t, err)
+
+	// Unrelated file is NOT in the new commit
+	headAfter, _ := repo.Head()
+	commit, _ := repo.CommitObject(headAfter.Hash())
+	tree, _ := commit.Tree()
+	_, errSrc := tree.File("src.go")
+	assert.Error(t, errSrc, "src.go must NOT be in the commit")
+
+	// Working tree still reports src.go as untracked/changed
+	wt, _ := repo.Worktree()
+	status, _ := wt.Status()
+	assert.False(t, status.IsClean(), "unrelated change should remain in working tree")
+}
