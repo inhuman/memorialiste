@@ -34,6 +34,12 @@ type Options struct {
 	// Summariser is called when the diff exceeds TokenBudget.
 	// May be nil when TokenBudget is never expected to be exceeded.
 	Summariser Summariser
+	// ASTContext enables AST-enriched diff context via grep-ast.
+	// Default false — opt-in only.
+	ASTContext bool
+	// Annotator is the ASTAnnotator implementation used when ASTContext is
+	// true. When nil, grepASTAnnotator is used automatically.
+	Annotator ASTAnnotator
 }
 
 // DiffContext holds the assembled context for one doc entry.
@@ -42,12 +48,15 @@ type DiffContext struct {
 	Entry manifest.DocEntry
 	// DocBody is the doc file content with frontmatter stripped.
 	DocBody string
-	// Diff is the filtered git diff (raw or summarised).
+	// Diff is the filtered git diff (raw, summarised, or AST-enriched).
 	Diff string
 	// HeadSHA is the current HEAD commit SHA for the watermark bump.
 	HeadSHA string
 	// Summarised is true when Diff was compressed via Summariser.
 	Summarised bool
+	// ASTEnriched is true when at least one file's diff was annotated with
+	// AST scope information.
+	ASTEnriched bool
 }
 
 // Assemble builds a DiffContext for the given DocEntry.
@@ -79,6 +88,21 @@ func Assemble(ctx context.Context, entry manifest.DocEntry, opts Options) (*Diff
 		return nil, err
 	}
 
+	// AST enrichment (opt-in).
+	astEnriched := false
+	if opts.ASTContext && diff != "" {
+		annotator := opts.Annotator
+		if annotator == nil {
+			annotator = &grepASTAnnotator{repoPath: opts.RepoPath}
+		}
+		enriched, ok, enrichErr := enrichDiff(ctx, opts.RepoPath, diff, annotator)
+		if enrichErr != nil {
+			return nil, fmt.Errorf("context: AST enrichment: %w", enrichErr)
+		}
+		diff = enriched
+		astEnriched = ok
+	}
+
 	summarised := false
 	if ApproxTokens(diff) > opts.TokenBudget {
 		if opts.Summariser == nil {
@@ -93,11 +117,12 @@ func Assemble(ctx context.Context, entry manifest.DocEntry, opts Options) (*Diff
 	}
 
 	return &DiffContext{
-		Entry:      entry,
-		DocBody:    docBody,
-		Diff:       diff,
-		HeadSHA:    headSHA,
-		Summarised: summarised,
+		Entry:       entry,
+		DocBody:     docBody,
+		Diff:        diff,
+		HeadSHA:     headSHA,
+		Summarised:  summarised,
+		ASTEnriched: astEnriched,
 	}, nil
 }
 

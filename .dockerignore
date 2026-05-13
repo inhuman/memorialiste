@@ -1,0 +1,12 @@
+.git
+.github
+.specify
+specs
+.claude
+.idea
+*.md
+*.env
+.env*
+coverage.*
+*.out
+*.test
