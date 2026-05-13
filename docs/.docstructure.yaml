@@ -1,0 +1,13 @@
+docs:
+  - path: docs/architecture.md
+    audience: developers
+    covers:
+      - context/
+      - manifest/
+      - provider/
+      - generate/
+      - internal/
+    description: >
+      Internal architecture overview — package layout, key abstractions
+      (Provider, Summariser, ASTAnnotator), data flow from manifest parsing
+      through diff assembly, AST enrichment, token budget, and LLM generation.
