@@ -17,6 +17,10 @@ Your task:
 - Preserve sections that are still accurate; rewrite only what has changed.
 - Do not invent features not visible in the diff.
 - Write in {language}.
+- When the diff introduces or significantly changes architecture, data flow,
+  or component relationships, include a Mermaid diagram (` + "```mermaid" + ` fenced
+  block) — flowchart for data flow, sequenceDiagram for interactions, classDiagram
+  for type relationships. Skip diagrams when changes are purely textual or trivial.
 - Return only the updated documentation content in Markdown (no frontmatter,
   no preamble, no explanation).`
 
