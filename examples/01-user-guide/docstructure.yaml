@@ -1,0 +1,11 @@
+docs:
+  - path: docs/user/guide.md
+    audience: end users
+    covers:
+      - cmd/
+      - cliconfig/
+    description: >
+      User-facing guide explaining how to install and use memorialiste as a
+      Docker image. Covers CLI flags, environment variables, the dry-run
+      workflow, manifest file format, GitLab CI and GitHub Actions examples.
+      Audience: engineers who want to USE the tool, not extend it.

@@ -1,0 +1,11 @@
+docs:
+  - path: docs/ru/руководство.md
+    audience: end users (Russian-speaking)
+    covers:
+      - cmd/
+      - cliconfig/
+    description: >
+      Руководство пользователя на русском. Объясняет как использовать
+      memorialiste как готовый Docker-образ: установка, базовые сценарии,
+      все CLI-флаги и соответствующие env-переменные, формат манифеста,
+      примеры для GitLab CI и GitHub Actions, локальный dry-run.

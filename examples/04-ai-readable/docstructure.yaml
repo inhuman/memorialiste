@@ -1,0 +1,19 @@
+docs:
+  - path: docs/ai/context.md
+    audience: AI assistants
+    covers:
+      - context/
+      - manifest/
+      - provider/
+      - generate/
+      - output/
+      - platform/
+      - cliconfig/
+      - cmd/
+      - internal/
+    description: >
+      Self-contained project context optimised for LLM consumption. Dense,
+      structured, no narrative — purpose, package layout with one-line
+      summaries, public types and their fields, CLI flag table, key
+      invariants and constraints. Intended to be loaded as system-prompt
+      context for chat-based AI assistants working on this repo.
