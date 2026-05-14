@@ -110,9 +110,10 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			result.TokenUsage.PromptTokens, result.TokenUsage.CompletionTokens, result.TokenUsage.TotalTokens)
 
 		entries = append(entries, output.Entry{
-			Path:    entry.Path,
-			Body:    result.Content,
-			HeadSHA: dc.HeadSHA,
+			Path:     entry.Path,
+			Body:     result.Content,
+			HeadSHA:  dc.HeadSHA,
+			Audience: entry.Audience,
 		})
 	}
 
