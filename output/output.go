@@ -24,6 +24,11 @@ type Entry struct {
 	Body string
 	// HeadSHA is stamped as the generated_at watermark.
 	HeadSHA string
+	// Audience comes from the manifest entry's audience field. When set,
+	// the audience slug is embedded in the auto-generated branch name so
+	// reviewers can tell at a glance which audience the MR/PR targets.
+	// Optional — empty audience falls back to the timestamp-only format.
+	Audience string
 }
 
 // Author is the commit identity used when the system creates a commit.
@@ -95,7 +100,7 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 
 	// --- Phase 1: classify entries (skip empty bodies, build write plan)
 	type plannedWrite struct {
-		absPath, relPath, body, sha string
+		absPath, relPath, body, sha, audience string
 	}
 	var plan []plannedWrite
 	for _, e := range entries {
@@ -115,10 +120,11 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 			relPath = e.Path
 		}
 		plan = append(plan, plannedWrite{
-			absPath: absPath,
-			relPath: filepath.ToSlash(relPath),
-			body:    e.Body,
-			sha:     e.HeadSHA,
+			absPath:  absPath,
+			relPath:  filepath.ToSlash(relPath),
+			body:     e.Body,
+			sha:      e.HeadSHA,
+			audience: e.Audience,
 		})
 	}
 
@@ -155,7 +161,11 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 	if prefix == "" {
 		prefix = DefaultBranchPrefix
 	}
-	branch := branchName(prefix, opts.Now(), headHash.String())
+	audiences := make([]string, 0, len(plan))
+	for _, p := range plan {
+		audiences = append(audiences, p.audience)
+	}
+	branch := branchName(prefix, audiences)
 	refName := plumbing.NewBranchReferenceName(branch)
 
 	// Collision check

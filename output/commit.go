@@ -1,28 +1,80 @@
 package output
 
 import (
-	"time"
+	"slices"
+	"strings"
+	"unicode"
 
 	"github.com/go-git/go-git/v6"
 )
 
 const (
-	timestampFormat    = "20060102-150405"
 	defaultAuthorName  = "memorialiste"
 	defaultAuthorEmail = "noreply@local"
+	defaultAudience    = "common"
+	multiAudienceSlug  = "multi"
 )
 
-// branchName formats the auto-generated branch name as
-// "<prefix>YYYYMMDD-HHMMSS-<7chars>" using UTC time.
-func branchName(prefix string, now time.Time, headHash string) string {
+// branchName formats the auto-generated branch name.
+//
+// Names are derived entirely from the manifest entry audience values —
+// no timestamps, no SHA suffixes. The same audience always produces the
+// same branch name, so a re-run while a previous MR is still open will
+// fail-fast with ErrBranchExists, prompting the operator to close or
+// delete the previous branch before proceeding.
+//
+//   - All entries share one non-empty audience → "<prefix><slug>"
+//   - Entries declare distinct audiences      → "<prefix>multi"
+//   - No audience declared on any entry       → "<prefix>common"
+func branchName(prefix string, audiences []string) string {
 	if prefix == "" {
 		prefix = DefaultBranchPrefix
 	}
-	short := headHash
-	if len(short) > 7 {
-		short = short[:7]
+	return prefix + audienceSlug(audiences)
+}
+
+// audienceSlug picks the stable slug describing this set of audiences.
+func audienceSlug(audiences []string) string {
+	var slugs []string
+	seen := map[string]struct{}{}
+	for _, a := range audiences {
+		s := slugify(a)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		slugs = append(slugs, s)
 	}
-	return prefix + now.UTC().Format(timestampFormat) + "-" + short
+	slices.Sort(slugs)
+	switch len(slugs) {
+	case 0:
+		return defaultAudience
+	case 1:
+		return slugs[0]
+	default:
+		return multiAudienceSlug
+	}
+}
+
+// slugify converts an audience label (e.g. "end users", "AI assistants")
+// into a branch-safe slug (lowercase, alphanumeric + dashes, collapsed runs).
+func slugify(s string) string {
+	var b strings.Builder
+	prevDash := true
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+			prevDash = false
+		case !prevDash:
+			b.WriteRune('-')
+			prevDash = true
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
 }
 
 // resolveAuthor applies precedence: explicit override → repo config → fallback.

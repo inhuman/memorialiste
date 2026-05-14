@@ -138,13 +138,13 @@ func TestApply_NonDryRun_CreatesBranchAndCommit(t *testing.T) {
 		DryRun:   false,
 		Now:      fixedClock("20260514-093412"),
 	}, []output.Entry{
-		{Path: "docs/a.md", Body: "A", HeadSHA: origHead.String()},
-		{Path: "docs/b.md", Body: "B", HeadSHA: origHead.String()},
+		{Path: "docs/a.md", Body: "A", HeadSHA: origHead.String(), Audience: "developers"},
+		{Path: "docs/b.md", Body: "B", HeadSHA: origHead.String(), Audience: "developers"},
 	})
 	require.NoError(t, err)
 
-	// Branch name format
-	expected := output.DefaultBranchPrefix + "20260514-093412-" + origHead.String()[:7]
+	// Branch name format: <prefix><audience-slug>
+	expected := output.DefaultBranchPrefix + "developers"
 	assert.Equal(t, expected, res.BranchName)
 	assert.NotEmpty(t, res.CommitSHA)
 	assert.Equal(t, []string{"docs/a.md", "docs/b.md"}, res.WrittenFiles)
@@ -183,17 +183,15 @@ func TestApply_CustomBranchPrefix(t *testing.T) {
 func TestApply_BranchCollision_ErrBranchExists(t *testing.T) {
 	repo, dir := initRepoWithCommit(t)
 	headRef, _ := repo.Head()
-	clock := fixedClock("20260514-110000")
-	expectedBranch := output.DefaultBranchPrefix + "20260514-110000-" + headRef.Hash().String()[:7]
+	// Default audience "common" → branch <prefix>common
+	expectedBranch := output.DefaultBranchPrefix + "common"
 
-	// Pre-create the colliding branch
 	require.NoError(t, repo.Storer.SetReference(
 		plumbing.NewHashReference(plumbing.NewBranchReferenceName(expectedBranch), headRef.Hash()),
 	))
 
 	_, err := output.Apply(context.Background(), output.Options{
 		RepoPath: dir,
-		Now:      clock,
 	}, []output.Entry{
 		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String()},
 	})
@@ -201,6 +199,55 @@ func TestApply_BranchCollision_ErrBranchExists(t *testing.T) {
 	var brErr *output.ErrBranchExists
 	require.True(t, errors.As(err, &brErr))
 	assert.Equal(t, expectedBranch, brErr.Name)
+}
+
+// ── Branch-name audience semantics ────────────────────────────────────────────
+
+func TestApply_BranchName_SingleAudience(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+
+	res, err := output.Apply(context.Background(), output.Options{RepoPath: dir}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String(), Audience: "end users"},
+		{Path: "docs/b.md", Body: "B", HeadSHA: headRef.Hash().String(), Audience: "end users"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, output.DefaultBranchPrefix+"end-users", res.BranchName)
+}
+
+func TestApply_BranchName_MultiAudience(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+
+	res, err := output.Apply(context.Background(), output.Options{RepoPath: dir}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String(), Audience: "developers"},
+		{Path: "docs/b.md", Body: "B", HeadSHA: headRef.Hash().String(), Audience: "end users"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, output.DefaultBranchPrefix+"multi", res.BranchName)
+}
+
+func TestApply_BranchName_EmptyAudienceDefaultsToCommon(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+
+	res, err := output.Apply(context.Background(), output.Options{RepoPath: dir}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String()},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, output.DefaultBranchPrefix+"common", res.BranchName)
+}
+
+func TestApply_BranchName_AudienceSlugifiedAndDeduped(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+
+	res, err := output.Apply(context.Background(), output.Options{RepoPath: dir}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String(), Audience: "AI Assistants!"},
+		{Path: "docs/b.md", Body: "B", HeadSHA: headRef.Hash().String(), Audience: "  AI   assistants  "},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, output.DefaultBranchPrefix+"ai-assistants", res.BranchName)
 }
 
 func TestApply_CommitMessageStructure(t *testing.T) {
