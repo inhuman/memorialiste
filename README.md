@@ -234,6 +234,24 @@ The Docker image bundles:
 
 These are only invoked when `--ast-context` is enabled.
 
+## Examples
+
+See [`examples/`](examples/) for ready-to-run scenarios:
+
+| Scenario | What it shows |
+|----------|---------------|
+| [`01-user-guide`](examples/01-user-guide/) | Plain end-user guide; built-in prompt; minimal config |
+| [`02-architecture`](examples/02-architecture/) | Developer-facing architecture overview with AST + Mermaid |
+| [`03-developer-onboarding`](examples/03-developer-onboarding/) | Custom system prompt for contributor onboarding |
+| [`04-ai-readable`](examples/04-ai-readable/) | Dense LLM-readable project context (think `CLAUDE.md`) |
+| [`05-russian-docs`](examples/05-russian-docs/) | `--language russian` (works for any language) |
+| [`06-changelog`](examples/06-changelog/) | CHANGELOG via `--repo-meta=extended` |
+| [`ci-gitlab`](examples/ci-gitlab/) | Drop-in `.gitlab-ci.yml` |
+| [`ci-github`](examples/ci-github/) | Drop-in GitHub Actions workflow |
+
+Every doc-scenario folder contains an executable `run.sh` that you can
+invoke locally against a running Ollama.
+
 ## Library Usage
 
 memorialiste is also a Go library — use `manifest`, `context`, `generate`,

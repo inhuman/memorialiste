@@ -1,0 +1,19 @@
+docs:
+  - path: docs/architecture.md
+    audience: developers
+    covers:
+      - context/
+      - manifest/
+      - provider/
+      - generate/
+      - output/
+      - platform/
+      - cliconfig/
+      - cmd/
+      - internal/
+    description: >
+      Internal architecture overview — full pipeline from manifest parsing
+      through diff assembly + AST enrichment, token budget, LLM generation,
+      file write + branch commit, and platform push + MR/PR creation.
+      Include Mermaid diagrams for data flow and package interactions.
+      Cover every package and its public surface.

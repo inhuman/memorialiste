@@ -1,0 +1,45 @@
+# Drop into .github/workflows/docs.yml at your repo root.
+#
+# Required secrets:
+#   MEMORIALISTE_TOKEN — PAT with repo scope (default GITHUB_TOKEN works
+#                        only with explicit permissions: pull-requests: write)
+# Required variables:
+#   OLLAMA_URL — URL of an Ollama instance the runner can reach
+
+name: Update documentation
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'   # every Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so memorialiste can resolve tags
+
+      - name: Run memorialiste
+        run: |
+          docker run --rm --network=host \
+            -v "${{ github.workspace }}":/repo \
+            -e MEMORIALISTE_AST_CONTEXT=true \
+            -e MEMORIALISTE_REPO_META=basic \
+            -e MEMORIALISTE_TOKEN_BUDGET=16000 \
+            idconstruct/memorialiste:latest \
+            --repo /repo \
+            --provider-url "${{ vars.OLLAMA_URL }}" \
+            --model qwen3-coder:30b \
+            --platform github \
+            --platform-token "${{ secrets.MEMORIALISTE_TOKEN }}" \
+            --project-id "${{ github.repository }}" \
+            --base-branch "${{ github.event.repository.default_branch }}" \
+            --dry-run=false

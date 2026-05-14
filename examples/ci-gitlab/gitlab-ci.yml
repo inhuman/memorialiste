@@ -1,0 +1,32 @@
+# Drop into .gitlab-ci.yml at your repo root.
+#
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#   GITLAB_TOKEN — personal access token with api + write_repository scopes
+#   OLLAMA_URL   — http(s) URL of an Ollama instance the runner can reach
+
+stages:
+  - docs
+
+update-docs:
+  stage: docs
+  image: idconstruct/memorialiste:latest
+  variables:
+    MEMORIALISTE_AST_CONTEXT: "true"
+    MEMORIALISTE_REPO_META:   "basic"
+    MEMORIALISTE_TOKEN_BUDGET: "16000"
+  script:
+    - memorialiste
+      --repo "$CI_PROJECT_DIR"
+      --provider-url "$OLLAMA_URL"
+      --model "qwen3-coder:30b"
+      --platform gitlab
+      --platform-url "$CI_SERVER_URL"
+      --platform-token "$GITLAB_TOKEN"
+      --project-id "$CI_PROJECT_ID"
+      --base-branch "$CI_DEFAULT_BRANCH"
+      --dry-run=false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always

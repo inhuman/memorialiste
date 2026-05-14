@@ -1,0 +1,16 @@
+docs:
+  - path: CHANGELOG.md
+    audience: users tracking releases
+    covers:
+      - cmd/
+      - cliconfig/
+      - context/
+      - generate/
+      - output/
+      - platform/
+    description: >
+      Keep-a-Changelog-formatted release notes. One section per recent tag
+      (from --repo-meta=extended metadata), grouping changes into Added /
+      Changed / Fixed / Deprecated. User-visible perspective — describe
+      what changed for the operator running memorialiste, not internal
+      refactors.

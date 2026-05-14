@@ -1,0 +1,18 @@
+docs:
+  - path: docs/contributing.md
+    audience: contributors
+    covers:
+      - context/
+      - manifest/
+      - provider/
+      - generate/
+      - output/
+      - platform/
+      - cliconfig/
+      - cmd/
+      - internal/
+    description: >
+      Onboarding guide for new contributors. Walks through cloning the
+      repo, building the Docker image locally, running unit and integration
+      tests, conventions (vendored deps, no comments on obvious code,
+      golangci-lint), how to add a new doc type, and how to ship a release.
