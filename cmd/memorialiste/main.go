@@ -70,15 +70,23 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			Audience:    entry.Audience,
 			Description: entry.Description,
 		}, mctx.Options{
-			RepoPath:    cfg.RepoPath,
-			TokenBudget: cfg.TokenBudget,
-			ASTContext:  cfg.ASTContext,
+			RepoPath:      cfg.RepoPath,
+			TokenBudget:   cfg.TokenBudget,
+			ASTContext:    cfg.ASTContext,
+			RepoMetaLevel: mctx.MetaLevel(cfg.RepoMeta),
 		})
 		if err != nil {
 			return fmt.Errorf("assemble %q: %w", entry.Path, err)
 		}
 		log.Printf("[%d/%d] diff=%d chars, summarised=%v, ast=%v, head=%s",
 			i+1, len(m.Docs), len(dc.Diff), dc.Summarised, dc.ASTEnriched, dc.HeadSHA[:8])
+
+		var metaBlock string
+		if dc.RepoMeta != nil {
+			metaBlock = dc.RepoMeta.Format(mctx.MetaLevel(cfg.RepoMeta))
+			log.Printf("[%d/%d] meta: tag=%s sha=%s level=%s",
+				i+1, len(m.Docs), dc.RepoMeta.LatestTag, dc.RepoMeta.ShortSHA, cfg.RepoMeta)
+		}
 
 		if dc.Diff == "" {
 			log.Printf("[%d/%d] no changes since watermark — skipping", i+1, len(m.Docs))
@@ -92,6 +100,7 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			Language:     cfg.Language,
 			Prompt:       cfg.Prompt,
 			SystemPrompt: cfg.SystemPrompt,
+			RepoMeta:     metaBlock,
 		}, prov)
 		if err != nil {
 			return fmt.Errorf("generate %q: %w", entry.Path, err)

@@ -125,6 +125,28 @@ func TestGenerate_NilProvider_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "provider is nil")
 }
 
+func TestGenerate_RepoMetaPrepended(t *testing.T) {
+	var userContent string
+	fp := &fake.Provider{
+		CompleteFunc: func(_ context.Context, msgs []provider.Message) (string, provider.TokenUsage, error) {
+			userContent = msgs[1].Content
+			return "OK", provider.TokenUsage{}, nil
+		},
+	}
+
+	const meta = "=== Repository metadata ===\nLatest tag: vX\n=== End metadata ==="
+	_, err := generate.Generate(context.Background(), generate.Input{
+		RepoMeta: meta,
+		DocBody:  "DOC-BODY",
+		Diff:     "DIFF-CONTENT",
+	}, fp)
+	require.NoError(t, err)
+	metaIdx := strings.Index(userContent, "=== Repository metadata ===")
+	docIdx := strings.Index(userContent, "DOC-BODY")
+	require.GreaterOrEqual(t, metaIdx, 0)
+	require.Greater(t, docIdx, metaIdx, "expected meta block before doc body")
+}
+
 func TestGenerate_DocBodyAndDiffSeparated(t *testing.T) {
 	var userContent string
 	fp := &fake.Provider{
