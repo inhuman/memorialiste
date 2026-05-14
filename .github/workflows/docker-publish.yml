@@ -21,6 +21,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/memorialiste:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/memorialiste:${{ github.ref_name }}

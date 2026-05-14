@@ -1,10 +1,13 @@
 # Stage 1: build Go binary
 FROM golang:1.26-alpine AS builder
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY vendor/ vendor/
 COPY . .
-RUN CGO_ENABLED=0 go build -o /memorialiste ./cmd/memorialiste
+RUN CGO_ENABLED=0 go build \
+    -ldflags="-X 'github.com/inhuman/memorialiste/cliconfig.Version=${VERSION}'" \
+    -o /memorialiste ./cmd/memorialiste
 
 # Stage 2: install Python deps
 # distroless/python3-debian12 ships Python 3.11, so we match that here.

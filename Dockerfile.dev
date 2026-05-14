@@ -1,10 +1,13 @@
 # Dev image for debugging grep-ast / tree-sitter
 FROM golang:1.26-alpine AS builder
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY vendor/ vendor/
 COPY . .
-RUN CGO_ENABLED=0 go build -o /memorialiste ./cmd/memorialiste
+RUN CGO_ENABLED=0 go build \
+    -ldflags="-X 'github.com/inhuman/memorialiste/cliconfig.Version=${VERSION}'" \
+    -o /memorialiste ./cmd/memorialiste
 
 FROM python:3.11-slim
 RUN pip install --no-cache-dir \
