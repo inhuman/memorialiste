@@ -26,6 +26,7 @@ type Config struct {
 	DryRun       bool   `name:"dry-run"       env:"MEMORIALISTE_DRY_RUN"       default:"true"               help:"Write files locally; skip branch+commit and platform calls" group:"Output"`
 	BranchPrefix string `name:"branch-prefix" env:"MEMORIALISTE_BRANCH_PREFIX" default:"docs/memorialiste-" help:"Prefix for the auto-generated branch name" group:"Output"`
 	ASTContext   bool   `name:"ast-context"   env:"MEMORIALISTE_AST_CONTEXT"   default:"false"              help:"Enable AST-enriched diff context via grep-ast" group:"Output"`
+	RepoMeta     string `name:"repo-meta"     env:"MEMORIALISTE_REPO_META"     default:"basic"              help:"Repository metadata level in LLM context: basic (default) or extended" enum:"basic,extended" group:"Output"`
 
 	Platform      string `name:"platform"       env:"MEMORIALISTE_PLATFORM"       default:"gitlab" help:"VCS platform: gitlab or github" group:"Platform"`
 	PlatformURL   string `name:"platform-url"   env:"MEMORIALISTE_PLATFORM_URL"   default:""       help:"Platform base URL (for self-hosted instances)" group:"Platform"`

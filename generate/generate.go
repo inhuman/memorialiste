@@ -26,6 +26,9 @@ type Input struct {
 	//   - "@path" → load contents from path
 	//   - other   → literal string
 	SystemPrompt string
+	// RepoMeta is a pre-formatted repository metadata block prepended to
+	// the user message ahead of DocBody and Diff. May be empty.
+	RepoMeta string
 }
 
 // Result is the output of a generation call.
@@ -54,7 +57,7 @@ func Generate(ctx context.Context, in Input, p provider.Provider) (*Result, erro
 
 	messages := []provider.Message{
 		{Role: "system", Content: system},
-		{Role: "user", Content: buildUserContent(in.DocBody, in.Diff)},
+		{Role: "user", Content: buildUserContent(in.RepoMeta, in.DocBody, in.Diff)},
 	}
 	if in.Prompt != "" {
 		messages = append(messages, provider.Message{Role: "user", Content: in.Prompt})
@@ -71,15 +74,25 @@ func Generate(ctx context.Context, in Input, p provider.Provider) (*Result, erro
 	}, nil
 }
 
-// buildUserContent joins the existing doc body and the diff context into one
-// user message. A `---` separator delimits the two sections so the model can
-// tell them apart.
-func buildUserContent(docBody, diff string) string {
-	if docBody == "" {
-		return diff
+// buildUserContent joins optional repo metadata, the existing doc body, and
+// the diff context into one user message. A `---` separator delimits the doc
+// body and diff sections so the model can tell them apart. When non-empty,
+// the metadata block is prepended ahead of both, separated by a blank line.
+func buildUserContent(repoMeta, docBody, diff string) string {
+	var body string
+	switch {
+	case docBody == "":
+		body = diff
+	case diff == "":
+		body = docBody
+	default:
+		body = docBody + "\n\n---\n\n" + diff
 	}
-	if diff == "" {
-		return docBody
+	if repoMeta == "" {
+		return body
 	}
-	return docBody + "\n\n---\n\n" + diff
+	if body == "" {
+		return repoMeta
+	}
+	return repoMeta + "\n\n" + body
 }

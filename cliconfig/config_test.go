@@ -229,6 +229,44 @@ func TestValidate_SystemPromptFileExists(t *testing.T) {
 	}
 }
 
+func TestParse_RepoMetaDefault(t *testing.T) {
+	cfg, err := Parse(nil, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.RepoMeta != "basic" {
+		t.Errorf("RepoMeta default: got %q, want %q", cfg.RepoMeta, "basic")
+	}
+}
+
+func TestParse_RepoMetaExtendedFlag(t *testing.T) {
+	cfg, err := Parse([]string{"--repo-meta=extended"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.RepoMeta != "extended" {
+		t.Errorf("RepoMeta: got %q, want %q", cfg.RepoMeta, "extended")
+	}
+}
+
+func TestParse_RepoMetaInvalidFlag(t *testing.T) {
+	_, err := parseWithOptions([]string{"--repo-meta=garbage"}, func(string) string { return "" }, kong.Exit(func(int) {}), kong.Writers(nil, nil))
+	if err == nil {
+		t.Fatal("expected parse error for invalid --repo-meta value")
+	}
+}
+
+func TestParse_RepoMetaEnv(t *testing.T) {
+	env := map[string]string{"MEMORIALISTE_REPO_META": "extended"}
+	cfg, err := Parse(nil, mapGetenv(env))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.RepoMeta != "extended" {
+		t.Errorf("RepoMeta: got %q, want extended", cfg.RepoMeta)
+	}
+}
+
 func TestValidate_NoTokenLeakage(t *testing.T) {
 	const secret = "SUPER-SECRET-XYZ"
 	cfg := &Config{

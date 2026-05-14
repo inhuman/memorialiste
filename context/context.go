@@ -7,8 +7,10 @@
 package context
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/go-git/go-git/v6"
@@ -40,6 +42,9 @@ type Options struct {
 	// Annotator is the ASTAnnotator implementation used when ASTContext is
 	// true. When nil, grepASTAnnotator is used automatically.
 	Annotator ASTAnnotator
+	// RepoMetaLevel controls how much repository metadata is collected and
+	// emitted in the LLM user message. Defaults to MetaBasic when empty.
+	RepoMetaLevel MetaLevel
 }
 
 // DiffContext holds the assembled context for one doc entry.
@@ -57,6 +62,9 @@ type DiffContext struct {
 	// ASTEnriched is true when at least one file's diff was annotated with
 	// AST scope information.
 	ASTEnriched bool
+	// RepoMeta holds the collected repository metadata; nil when collection
+	// failed gracefully (which itself does not fail the run).
+	RepoMeta *RepoMeta
 }
 
 // Assemble builds a DiffContext for the given DocEntry.
@@ -67,6 +75,7 @@ func Assemble(ctx context.Context, entry manifest.DocEntry, opts Options) (*Diff
 	if opts.TokenBudget == 0 {
 		opts.TokenBudget = defaultTokenBudget
 	}
+	opts.RepoMetaLevel = cmp.Or(opts.RepoMetaLevel, MetaBasic)
 
 	watermark, err := ReadWatermark(entry.Path)
 	if err != nil {
@@ -86,6 +95,18 @@ func Assemble(ctx context.Context, entry manifest.DocEntry, opts Options) (*Diff
 	headSHA, err := resolveHEAD(opts.RepoPath)
 	if err != nil {
 		return nil, err
+	}
+
+	var repoMeta *RepoMeta
+	if repo, openErr := git.PlainOpen(opts.RepoPath); openErr == nil {
+		meta, metaErr := gatherRepoMeta(repo, opts.RepoMetaLevel)
+		if metaErr != nil {
+			log.Printf("context: gather repo meta: %v", metaErr)
+		} else {
+			repoMeta = meta
+		}
+	} else {
+		log.Printf("context: gather repo meta: %v", openErr)
 	}
 
 	// AST enrichment (opt-in).
@@ -123,6 +144,7 @@ func Assemble(ctx context.Context, entry manifest.DocEntry, opts Options) (*Diff
 		HeadSHA:     headSHA,
 		Summarised:  summarised,
 		ASTEnriched: astEnriched,
+		RepoMeta:    repoMeta,
 	}, nil
 }
 
