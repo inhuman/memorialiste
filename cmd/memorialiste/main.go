@@ -1,7 +1,7 @@
 // Command memorialiste updates documentation from git diffs using an LLM.
 //
-// Pipeline: manifest → context (diff + AST) → generate (LLM) → output (write + commit).
-// Platform integration (pushing branches, opening MR/PR) is pending (US4).
+// Pipeline: manifest → context (diff + AST) → generate (LLM) → output (write + commit)
+// → platform (push + open MR/PR).
 package main
 
 import (
@@ -10,12 +10,16 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 
 	mctx "github.com/inhuman/memorialiste/context"
 	"github.com/inhuman/memorialiste/generate"
 	"github.com/inhuman/memorialiste/manifest"
 	"github.com/inhuman/memorialiste/output"
+	"github.com/inhuman/memorialiste/platform"
+	"github.com/inhuman/memorialiste/platform/github"
+	"github.com/inhuman/memorialiste/platform/gitlab"
 	"github.com/inhuman/memorialiste/provider/openai"
 )
 
@@ -32,8 +36,13 @@ func main() {
 		apiKey       = flag.String("api-key", "", "Bearer token for the LLM provider (optional)")
 		tokenBudget  = flag.Int("token-budget", 12000, "Max tokens for diff context before summarisation")
 		astContext   = flag.Bool("ast-context", false, "Enable AST-enriched diff context via grep-ast")
-		dryRun       = flag.Bool("dry-run", true, "Write files locally; skip branch+commit when true")
-		branchPrefix = flag.String("branch-prefix", output.DefaultBranchPrefix, "Prefix for the auto-generated branch name")
+		dryRun        = flag.Bool("dry-run", true, "Write files locally; skip branch+commit and platform calls when true")
+		branchPrefix  = flag.String("branch-prefix", output.DefaultBranchPrefix, "Prefix for the auto-generated branch name")
+		platformName  = flag.String("platform", "gitlab", "Hosting platform: gitlab or github")
+		platformURL   = flag.String("platform-url", "", "Platform API base URL (empty = adapter default)")
+		platformToken = flag.String("platform-token", "", "Platform access token; falls back to MEMORIALISTE_PLATFORM_TOKEN env var")
+		projectID     = flag.String("project-id", "", "GitLab project ID or GitHub 'owner/repo'")
+		baseBranch    = flag.String("base-branch", "main", "Target branch for the opened MR/PR")
 	)
 	flag.Parse()
 
@@ -122,6 +131,53 @@ func main() {
 		log.Printf("created branch %s with commit %s", res.BranchName, res.CommitSHA[:8])
 	} else if !*dryRun && len(res.WrittenFiles) == 0 {
 		log.Printf("nothing to update — no branch created")
+	}
+
+	if !*dryRun && res.BranchName != "" {
+		token := *platformToken
+		if token == "" {
+			token = os.Getenv("MEMORIALISTE_PLATFORM_TOKEN")
+		}
+		if token == "" {
+			log.Fatalf("platform: token is required; pass --platform-token or set MEMORIALISTE_PLATFORM_TOKEN")
+		}
+
+		var plat platform.Platform
+		switch *platformName {
+		case "gitlab":
+			plat = gitlab.New(gitlab.Config{
+				BaseURL:   *platformURL,
+				Token:     token,
+				ProjectID: *projectID,
+				RepoPath:  *repoPath,
+			})
+		case "github":
+			plat = github.New(github.Config{
+				BaseURL:    *platformURL,
+				Token:      token,
+				Repository: *projectID,
+				RepoPath:   *repoPath,
+			})
+		default:
+			log.Fatalf("unknown platform: %s", *platformName)
+		}
+
+		log.Printf("pushing branch %s to %s", res.BranchName, *platformName)
+		if err := plat.Push(ctx, res.BranchName, res.CommitSHA); err != nil {
+			log.Fatalf("push: %v", err)
+		}
+
+		log.Printf("opening MR/PR against %s", *baseBranch)
+		cr, err := plat.OpenChangeRequest(ctx, platform.ChangeRequest{
+			SourceBranch: res.BranchName,
+			TargetBranch: *baseBranch,
+			Title:        res.CommitSubject,
+			Body:         res.CommitBody,
+		})
+		if err != nil {
+			log.Fatalf("open MR/PR: %v", err)
+		}
+		log.Printf("opened: %s", cr.URL)
 	}
 
 	fmt.Println("done")
