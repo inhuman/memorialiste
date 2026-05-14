@@ -62,6 +62,12 @@ type Result struct {
 	BranchName string
 	// CommitSHA is empty in dry-run mode or when no files were written.
 	CommitSHA string
+	// CommitSubject is the first line of the commit message; empty when no
+	// commit was created.
+	CommitSubject string
+	// CommitBody is the body of the commit message (everything after the
+	// blank line that follows the subject); empty when no commit was created.
+	CommitBody string
 }
 
 // ErrBranchExists is returned when the proposed branch name collides
@@ -191,7 +197,8 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 	}
 
 	author := resolveAuthor(repo, opts.Author)
-	msg := buildCommitMessage(shortSHA, result.WrittenFiles)
+	subject, body := buildCommitParts(shortSHA, result.WrittenFiles)
+	msg := subject + "\n\n" + body
 
 	commitHash, err := wt.Commit(msg, &git.CommitOptions{
 		Author: &object.Signature{
@@ -206,20 +213,22 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 
 	result.BranchName = branch
 	result.CommitSHA = commitHash.String()
+	result.CommitSubject = subject
+	result.CommitBody = body
 	return result, nil
 }
 
-// buildCommitMessage produces the structured commit message per the spec.
-func buildCommitMessage(shortSHA string, files []string) string {
+// buildCommitParts produces the subject and body of the commit message.
+// The full commit message is subject + "\n\n" + body.
+func buildCommitParts(shortSHA string, files []string) (subject, body string) {
+	subject = "docs: update documentation to " + shortSHA
 	var sb strings.Builder
-	sb.WriteString("docs: update documentation to ")
-	sb.WriteString(shortSHA)
-	sb.WriteString("\n\nUpdated files:\n")
+	sb.WriteString("Updated files:\n")
 	for _, f := range files {
 		sb.WriteString("- ")
 		sb.WriteString(f)
 		sb.WriteString("\n")
 	}
-	return sb.String()
+	return subject, sb.String()
 }
 
