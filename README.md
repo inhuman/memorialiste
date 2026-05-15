@@ -138,6 +138,8 @@ All flags can be set via environment variables (uppercase snake_case with
 | `--dry-run` | `MEMORIALISTE_DRY_RUN` | `true` | Write files locally; skip branch+commit+platform |
 | `--branch-prefix` | `MEMORIALISTE_BRANCH_PREFIX` | `docs/memorialiste-` | Branch name prefix |
 | `--ast-context` | `MEMORIALISTE_AST_CONTEXT` | `false` | Enable AST-enriched diff context via grep-ast |
+| `--code-search` | `MEMORIALISTE_CODE_SEARCH` | `false` | Expose the AST `search_code` tool to the LLM (function calling) |
+| `--code-search-max-turns` | `MEMORIALISTE_CODE_SEARCH_MAX_TURNS` | `10` | Max tool-call turns before aborting |
 | `--repo-meta` | `MEMORIALISTE_REPO_META` | `basic` | Repo metadata level: `basic` or `extended` |
 | `--platform` | `MEMORIALISTE_PLATFORM` | `gitlab` | `gitlab` or `github` |
 | `--platform-url` | `MEMORIALISTE_PLATFORM_URL` | platform default | Base URL for self-hosted instances |
@@ -214,6 +216,22 @@ with dates — useful for CHANGELOG / release-notes documents.
 renderer, so the model sees enclosing function signatures and surrounding
 code structure instead of raw `+`/`-` lines. Significantly improves quality
 for code-heavy docs.
+
+## AST Code Search
+
+`--code-search` exposes a `search_code` function-calling tool to the LLM.
+Mid-generation the model may ask for any Go declaration in the repo by
+regex name match; the tool returns the matched function, method, type,
+const, or var bodies with file paths and line ranges. Useful when the
+diff alone lacks context (e.g. a doc covering one package references
+symbols defined in another).
+
+Bounded by `--code-search-max-turns` (default 10) and a per-file 5s parse
+timeout. Provider must implement OpenAI-style function calling — most
+modern OpenAI models, OpenRouter routes, and Ollama tool-capable models
+(e.g. `qwen2.5-coder:32b`, `llama3.1`) work. If the provider rejects a
+tools-shaped request, memorialiste fails fast with an actionable error
+suggesting `--code-search=false`.
 
 ## Architecture Diagrams
 

@@ -186,6 +186,40 @@ func TestValidate_AggregatesBoth(t *testing.T) {
 	}
 }
 
+func TestParse_CodeSearchDefaults(t *testing.T) {
+	cfg, err := Parse(nil, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.CodeSearch {
+		t.Errorf("CodeSearch default: want false")
+	}
+	if cfg.CodeSearchMaxTurns != 10 {
+		t.Errorf("CodeSearchMaxTurns default: got %d, want 10", cfg.CodeSearchMaxTurns)
+	}
+}
+
+func TestParse_CodeSearchEnvOverride(t *testing.T) {
+	env := map[string]string{"MEMORIALISTE_CODE_SEARCH": "true"}
+	cfg, err := Parse(nil, mapGetenv(env))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !cfg.CodeSearch {
+		t.Errorf("expected CodeSearch=true from env")
+	}
+}
+
+func TestParse_CodeSearchMaxTurnsFlag(t *testing.T) {
+	cfg, err := Parse([]string{"--code-search-max-turns=5"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.CodeSearchMaxTurns != 5 {
+		t.Errorf("CodeSearchMaxTurns: got %d, want 5", cfg.CodeSearchMaxTurns)
+	}
+}
+
 func TestValidate_BadPlatform(t *testing.T) {
 	cfg := &Config{Platform: "bitbucket", TokenBudget: 100, DryRun: true}
 	err := cfg.Validate()

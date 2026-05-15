@@ -47,6 +47,9 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 		return fmt.Errorf("manifest: %w", err)
 	}
 	log.Printf("loaded %d doc entries from %s", len(m.Docs), cfg.DocStructure)
+	if cfg.CodeSearch {
+		log.Printf("code-search: enabled (max-turns=%d)", cfg.CodeSearchMaxTurns)
+	}
 
 	prov := openai.New(openai.Config{
 		BaseURL:     cfg.ProviderURL,
@@ -101,6 +104,9 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			Prompt:       cfg.Prompt,
 			SystemPrompt: cfg.SystemPrompt,
 			RepoMeta:     metaBlock,
+			CodeSearch:   cfg.CodeSearch,
+			MaxTurns:     cfg.CodeSearchMaxTurns,
+			RepoRoot:     cfg.RepoPath,
 		}, prov)
 		if err != nil {
 			return fmt.Errorf("generate %q: %w", entry.Path, err)

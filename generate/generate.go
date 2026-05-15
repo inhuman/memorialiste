@@ -29,6 +29,15 @@ type Input struct {
 	// RepoMeta is a pre-formatted repository metadata block prepended to
 	// the user message ahead of DocBody and Diff. May be empty.
 	RepoMeta string
+	// CodeSearch enables the AST code-search tool-call loop when the
+	// provider implements provider.ToolingProvider. Default false preserves
+	// the legacy single-shot path with zero overhead.
+	CodeSearch bool
+	// MaxTurns caps the number of tool-call turns; 0 → DefaultMaxTurns.
+	MaxTurns int
+	// RepoRoot anchors the search_code tool to the local repository. Required
+	// when CodeSearch is true.
+	RepoRoot string
 }
 
 // Result is the output of a generation call.
@@ -61,6 +70,16 @@ func Generate(ctx context.Context, in Input, p provider.Provider) (*Result, erro
 	}
 	if in.Prompt != "" {
 		messages = append(messages, provider.Message{Role: "user", Content: in.Prompt})
+	}
+
+	if in.CodeSearch {
+		if tp, ok := p.(provider.ToolingProvider); ok {
+			content, usage, err := runToolLoop(ctx, in, tp, messages)
+			if err != nil {
+				return nil, err
+			}
+			return &Result{Content: content, TokenUsage: usage}, nil
+		}
 	}
 
 	content, usage, err := p.Complete(ctx, messages)
