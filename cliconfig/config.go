@@ -30,6 +30,8 @@ type Config struct {
 
 	WatermarksFile string `name:"watermarks-file" env:"MEMORIALISTE_WATERMARKS_FILE" default:"" help:"Sidecar YAML file storing generated_at watermarks; when empty, watermarks live in doc frontmatter" group:"Output"`
 
+	MigrationSidecars []string `name:"migration-sidecars" env:"MEMORIALISTE_MIGRATION_SIDECARS" default:"" help:"Comma-separated list of old sidecar files to read watermarks from when migrating BACK to frontmatter mode (after removing watermarks_file). Auto-discovered from manifest defaults+per-doc if not set." group:"Output"`
+
 	CodeSearch         bool `name:"code-search"           env:"MEMORIALISTE_CODE_SEARCH"           default:"false" help:"Enable AST code-search tool for the LLM" group:"Tools"`
 	CodeSearchMaxTurns int  `name:"code-search-max-turns" env:"MEMORIALISTE_CODE_SEARCH_MAX_TURNS" default:"10"    help:"Max tool-call turns before aborting" group:"Tools"`
 
