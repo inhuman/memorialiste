@@ -28,6 +28,9 @@ type Config struct {
 	ASTContext   bool   `name:"ast-context"   env:"MEMORIALISTE_AST_CONTEXT"   default:"false"              help:"Enable AST-enriched diff context via grep-ast" group:"Output"`
 	RepoMeta     string `name:"repo-meta"     env:"MEMORIALISTE_REPO_META"     default:"basic"              help:"Repository metadata level in LLM context: basic (default) or extended" enum:"basic,extended" group:"Output"`
 
+	CodeSearch         bool `name:"code-search"           env:"MEMORIALISTE_CODE_SEARCH"           default:"false" help:"Enable AST code-search tool for the LLM" group:"Tools"`
+	CodeSearchMaxTurns int  `name:"code-search-max-turns" env:"MEMORIALISTE_CODE_SEARCH_MAX_TURNS" default:"10"    help:"Max tool-call turns before aborting" group:"Tools"`
+
 	Platform      string `name:"platform"       env:"MEMORIALISTE_PLATFORM"       default:"gitlab" help:"VCS platform: gitlab or github" group:"Platform"`
 	PlatformURL   string `name:"platform-url"   env:"MEMORIALISTE_PLATFORM_URL"   default:""       help:"Platform base URL (for self-hosted instances)" group:"Platform"`
 	PlatformToken string `name:"platform-token" env:"MEMORIALISTE_PLATFORM_TOKEN" default:""       help:"Personal access token" group:"Platform"`

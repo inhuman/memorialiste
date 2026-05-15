@@ -19,6 +19,10 @@ type Provider struct {
 	// When nil, Complete returns ("", provider.TokenUsage{}, nil).
 	CompleteFunc func(ctx context.Context, messages []provider.Message) (string, provider.TokenUsage, error)
 
+	// CompleteWithToolsFunc is called by CompleteWithTools when non-nil.
+	// When nil, CompleteWithTools returns an empty Step (no tool_calls, no content).
+	CompleteWithToolsFunc func(ctx context.Context, messages []provider.Message, tools []provider.ToolSchema) (provider.Step, provider.TokenUsage, error)
+
 	// PushFunc is called by Push when non-nil.
 	// When nil, Push returns nil.
 	PushFunc func(ctx context.Context, branch, headSHA string) error
@@ -43,6 +47,14 @@ func (p *Provider) Complete(ctx context.Context, messages []provider.Message) (s
 		return p.CompleteFunc(ctx, messages)
 	}
 	return "", provider.TokenUsage{}, nil
+}
+
+// CompleteWithTools implements provider.ToolingProvider.
+func (p *Provider) CompleteWithTools(ctx context.Context, messages []provider.Message, tools []provider.ToolSchema) (provider.Step, provider.TokenUsage, error) {
+	if p.CompleteWithToolsFunc != nil {
+		return p.CompleteWithToolsFunc(ctx, messages, tools)
+	}
+	return provider.Step{}, provider.TokenUsage{}, nil
 }
 
 // Push implements platform.Platform.
