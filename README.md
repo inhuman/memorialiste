@@ -1,10 +1,55 @@
+[🇬🇧 English](README.md) · [🇷🇺 Русский](README-ru.md)
+
 # memorialiste
 
 > La mémorialiste visits your repository, reads what changed since its last visit, writes the missing chapters of your project's story, and leaves a merge request behind.
 
-A one-shot CLI tool that keeps documentation up-to-date with source code changes.
-Each run computes a `git diff` since the last documentation update, calls an
-OpenAI-compatible LLM to rewrite the affected docs, and opens a Merge/Pull Request.
+A one-shot CLI tool that keeps documentation up-to-date with source code
+changes. Each run computes a `git diff` since the last documentation update,
+calls an OpenAI-compatible LLM to rewrite the affected docs, and opens a
+Merge/Pull Request.
+
+## How it works (and why the manifest matters)
+
+memorialiste does NOT regenerate docs from scratch every time. Instead it
+keeps each doc file in sync with a specific slice of the source tree, and
+only redoes the work when that slice changed.
+
+The link between docs and code lives in a single file: **`docs/.docstructure.yaml`**.
+It lists every doc file you want managed by the tool, and tells it which
+source paths each doc cares about:
+
+```yaml
+docs:
+  - path: docs/user/guide.md
+    audience: end users
+    covers: [cmd/, cliconfig/]
+    description: User-facing CLI guide.
+
+  - path: docs/architecture.md
+    audience: developers
+    covers: [context/, generate/, output/, platform/]
+    description: Internal architecture: packages, abstractions, data flow.
+```
+
+Each run, for every entry, memorialiste:
+
+1. Reads the `generated_at` watermark from the doc file's frontmatter (the
+   commit SHA the doc was last regenerated against).
+2. Computes a git diff filtered to that entry's `covers` paths only.
+3. If the diff is empty, **skips this doc entirely** — no LLM call, no
+   wasted tokens.
+4. Otherwise feeds the diff + the current doc body to the LLM, writes the
+   refreshed body back with the bumped watermark.
+
+This is why the manifest is non-negotiable: without per-doc `covers`,
+every doc would see every change, the LLM would burn tokens deciding
+what's relevant, and the user guide would get rewritten whenever you
+edit internal plumbing.
+
+The `audience` field is also used to name the auto-created branch
+(`docs/memorialiste-developers`, `docs/memorialiste-end-users`, …) so MR
+lists stay readable.
 
 ## Installation
 
@@ -15,7 +60,7 @@ docker pull idconstruct/memorialiste:latest
 Pin a specific version for reproducibility:
 
 ```sh
-docker pull idconstruct/memorialiste:v0.2.1
+docker pull idconstruct/memorialiste:v0.3.1
 ```
 
 ## Usage
@@ -166,34 +211,6 @@ The tool reads `generated_at` to compute the diff since the last run.
 A file without frontmatter is treated as never generated (full-repo diff
 scoped to the entry's `covers` paths).
 
-## Doc Structure Manifest
-
-`docs/.docstructure.yaml` declares which docs exist and what source paths
-each one covers:
-
-```yaml
-docs:
-  - path: docs/architecture.md
-    audience: developers
-    covers:
-      - context/
-      - generate/
-      - output/
-      - platform/
-    description: >
-      Internal architecture: package layout, key abstractions, data flow.
-
-  - path: docs/user/guide.md
-    audience: end users
-    covers:
-      - cmd/
-      - cliconfig/
-    description: >
-      User-facing usage guide.
-```
-
-Each entry runs independently and only sees the diff scoped to its `covers`.
-
 ## Repository Metadata
 
 The LLM receives a compact metadata block prepended to its prompt so it can
@@ -201,9 +218,9 @@ write accurate version numbers:
 
 ```
 === Repository metadata ===
-Latest tag: v0.2.1
-HEAD: 8c9e7d2...
-Short SHA: 8c9e7d2
+Latest tag: v0.3.1
+HEAD: 53ebb4b...
+Short SHA: 53ebb4b
 === End metadata ===
 ```
 
@@ -232,9 +249,10 @@ proper `tool_calls` (not stringified JSON in `content`). Verified working
 on local Ollama: `qwen3:14b`, `qwen3.6:35b`, `gpt-oss:120b`. Models that
 return `finish_reason: stop` with a JSON blob in content (e.g.
 `qwen2.5-coder:7b`, sometimes `qwen3-coder:30b` with large contexts) do
-not follow the API correctly — switch model if you see no `code-search: turn=`
-log entries. If the provider rejects a tools-shaped request entirely,
-memorialiste fails fast with an actionable error suggesting `--code-search=false`.
+not follow the API correctly — memorialiste prints a `WARNING — the model
+did not call any tools` line and proceeds with diff-only output. If the
+provider rejects a tools-shaped request entirely, memorialiste fails fast
+with an actionable error suggesting `--code-search=false`.
 
 **Tip — when to combine with `--ast-context`**: AST context already
 embeds the enclosing function/method around every changed line, so

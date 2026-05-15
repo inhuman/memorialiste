@@ -44,7 +44,7 @@ func main() {
 func run(ctx context.Context, cfg *cliconfig.Config) error {
 	m, err := manifest.Parse(cfg.DocStructure)
 	if err != nil {
-		return fmt.Errorf("manifest: %w", err)
+		return err
 	}
 	log.Printf("loaded %d doc entries from %s", len(m.Docs), cfg.DocStructure)
 	if cfg.CodeSearch {
