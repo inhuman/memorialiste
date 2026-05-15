@@ -76,9 +76,12 @@ func TestParse_NoDocs(t *testing.T) {
 }
 
 func TestParse_MissingFile(t *testing.T) {
-	_, err := manifest.Parse(filepath.Join(t.TempDir(), "nonexistent.yaml"))
+	path := filepath.Join(t.TempDir(), "nonexistent.yaml")
+	_, err := manifest.Parse(path)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot read")
+	assert.ErrorIs(t, err, manifest.ErrManifestNotFound)
+	assert.Contains(t, err.Error(), path)
+	assert.Contains(t, err.Error(), "--doc-structure")
 }
 
 func TestParse_UnknownKeysIgnored(t *testing.T) {
