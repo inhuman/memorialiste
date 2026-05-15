@@ -275,6 +275,7 @@ See [`examples/`](examples/) for ready-to-run scenarios:
 | [`04-ai-readable`](examples/04-ai-readable/) | Dense LLM-readable project context (think `CLAUDE.md`) |
 | [`05-russian-docs`](examples/05-russian-docs/) | `--language russian` (works for any language) |
 | [`06-changelog`](examples/06-changelog/) | CHANGELOG via `--repo-meta=extended` |
+| [`07-codesearch`](examples/07-codesearch/) | `--code-search` — model pulls Go declarations via function calling |
 | [`ci-gitlab`](examples/ci-gitlab/) | Drop-in `.gitlab-ci.yml` |
 | [`ci-github`](examples/ci-github/) | Drop-in GitHub Actions workflow |
 
