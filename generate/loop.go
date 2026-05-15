@@ -19,6 +19,7 @@ func runToolLoop(ctx context.Context, in Input, p provider.ToolingProvider, mess
 	maxTurns := cmp.Or(in.MaxTurns, DefaultMaxTurns)
 	tools := []provider.ToolSchema{SearchCodeSchema}
 	var aggregate provider.TokenUsage
+	totalCalls := 0
 
 	for turn := 1; turn <= maxTurns; turn++ {
 		step, usage, err := p.CompleteWithTools(ctx, messages, tools)
@@ -32,6 +33,9 @@ func runToolLoop(ctx context.Context, in Input, p provider.ToolingProvider, mess
 			return "", aggregate, fmt.Errorf("generate: tool-call: %w", err)
 		}
 		if len(step.ToolCalls) == 0 {
+			if totalCalls == 0 {
+				log.Printf("code-search: WARNING — --code-search was enabled but the model did not call any tools. The model may be ignoring the tool schema or returning malformed responses. Output is based on diff only.")
+			}
 			return Strip(step.Content), aggregate, nil
 		}
 
@@ -41,6 +45,7 @@ func runToolLoop(ctx context.Context, in Input, p provider.ToolingProvider, mess
 			ToolCalls: step.ToolCalls,
 		})
 		for _, call := range step.ToolCalls {
+			totalCalls++
 			log.Printf("code-search: turn=%d name=%s args=%s", turn, call.Name, call.Arguments)
 			result := dispatchSearchCode(ctx, call, in.RepoRoot)
 			messages = append(messages, provider.Message{

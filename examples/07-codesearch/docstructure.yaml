@@ -1,0 +1,16 @@
+docs:
+  - path: docs/architecture.md
+    audience: developers
+    covers:
+      - context/
+      - manifest/
+      - generate/
+      - output/
+      - platform/
+      - codesearch/
+      - cliconfig/
+      - cmd/
+    description: >
+      Internal architecture overview generated with code-search enabled.
+      The LLM is expected to fetch full bodies of key declarations via the
+      search_code tool rather than guess from the diff alone.

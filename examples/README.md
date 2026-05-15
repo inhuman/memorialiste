@@ -14,6 +14,7 @@
 | LLM-friendly справка | [`04-ai-readable/`](04-ai-readable/) | Structured prose без декоративного форматирования, для feedback в чат-моделей |
 | Документация на русском | [`05-russian-docs/`](05-russian-docs/) | `--language russian`, ориентация на не-английскую аудиторию |
 | CHANGELOG из тегов | [`06-changelog/`](06-changelog/) | `--repo-meta=extended` для истории релизов, кастомный prompt |
+| Code-search tool | [`07-codesearch/`](07-codesearch/) | `--code-search` — LLM сам подтягивает Go-декларации через function calling |
 | GitLab CI шаблон | [`ci-gitlab/`](ci-gitlab/) | `.gitlab-ci.yml` для автогенерации в pipeline |
 | GitHub Actions шаблон | [`ci-github/`](ci-github/) | `docs.yml` workflow с `MEMORIALISTE_*` env vars |
 
