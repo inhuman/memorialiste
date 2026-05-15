@@ -227,11 +227,22 @@ diff alone lacks context (e.g. a doc covering one package references
 symbols defined in another).
 
 Bounded by `--code-search-max-turns` (default 10) and a per-file 5s parse
-timeout. Provider must implement OpenAI-style function calling — most
-modern OpenAI models, OpenRouter routes, and Ollama tool-capable models
-(e.g. `qwen2.5-coder:32b`, `llama3.1`) work. If the provider rejects a
-tools-shaped request, memorialiste fails fast with an actionable error
-suggesting `--code-search=false`.
+timeout. Provider must implement OpenAI-style function calling and emit
+proper `tool_calls` (not stringified JSON in `content`). Verified working
+on local Ollama: `qwen3:14b`, `qwen3.6:35b`, `gpt-oss:120b`. Models that
+return `finish_reason: stop` with a JSON blob in content (e.g.
+`qwen2.5-coder:7b`, sometimes `qwen3-coder:30b` with large contexts) do
+not follow the API correctly — switch model if you see no `code-search: turn=`
+log entries. If the provider rejects a tools-shaped request entirely,
+memorialiste fails fast with an actionable error suggesting `--code-search=false`.
+
+**Tip — when to combine with `--ast-context`**: AST context already
+embeds the enclosing function/method around every changed line, so
+tool-capable models often skip `search_code` entirely when AST is on.
+Use `--code-search` ALONE when you want the model to pull in
+declarations referenced by the diff but defined far away from it; use
+both flags together for the most thorough context (the model picks
+what it needs).
 
 ## Architecture Diagrams
 
