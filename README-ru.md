@@ -371,3 +371,25 @@ dc, _ := mctx.Assemble(context.Background(), m.Docs[0], mctx.Options{
 })
 fmt.Println(dc.Diff)
 ```
+
+## Контрибуция
+
+Баг-репорты, feature-реквесты и pull-реквесты приветствуются.
+
+- **Нашли баг?** Используйте [шаблон bug-репорта](.github/ISSUE_TEMPLATE/bug_report.md)
+  — приложите точный вызов CLI, env-переменные, релевантные строки лога.
+- **Идея фичи?** Используйте [шаблон feature-реквеста](.github/ISSUE_TEMPLATE/feature_request.md)
+  — опишите сценарий, а не просто «хочу».
+- **Хотите прислать PR?** Сначала прочитайте [`CONTRIBUTING.md`](CONTRIBUTING.md)
+  — там dev-loop, соглашения проекта, стиль commit-сообщений и
+  обязательный локальный Docker-smoke перед релизным тегом.
+
+Быстрый dev-цикл:
+
+```sh
+git clone https://github.com/inhuman/memorialiste.git
+cd memorialiste
+go test ./...
+go vet ./...
+docker build -t memorialiste:dev --build-arg VERSION=dev .
+```

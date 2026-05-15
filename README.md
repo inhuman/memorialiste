@@ -360,3 +360,25 @@ dc, _ := mctx.Assemble(context.Background(), m.Docs[0], mctx.Options{
 })
 fmt.Println(dc.Diff)
 ```
+
+## Contributing
+
+Bug reports, feature requests, and pull requests are welcome.
+
+- **Bug?** Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+  — capture the exact CLI invocation, env vars, and log lines.
+- **Feature idea?** Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
+  — describe the scenario, not just the wish.
+- **Want to send a PR?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first — it covers
+  the dev loop, project conventions, commit-message style, and the
+  pre-release local Docker smoke that every release tag must pass.
+
+Quick dev loop:
+
+```sh
+git clone https://github.com/inhuman/memorialiste.git
+cd memorialiste
+go test ./...
+go vet ./...
+docker build -t memorialiste:dev --build-arg VERSION=dev .
+```

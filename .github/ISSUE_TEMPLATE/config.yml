@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the README first
+    url: https://github.com/inhuman/memorialiste/blob/main/README.md
+    about: CLI flags, manifest format, runtime dependencies and FAQ live here.
+  - name: Browse the examples
+    url: https://github.com/inhuman/memorialiste/tree/main/examples
+    about: Ready-to-run scenarios — user guide, architecture, AI-readable, sidecar watermarks, etc.
