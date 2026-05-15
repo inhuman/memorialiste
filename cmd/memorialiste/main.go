@@ -66,16 +66,26 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 	log.Printf("loaded %d doc entries from %s", len(m.Docs), cfg.DocStructure)
 
 	// Collect distinct sidecar paths used by ANY entry for reverse-migration reads.
+	// Also include manifest defaults.watermarks_file and the explicit
+	// --migration-sidecars CLI list — for the case where the user removed
+	// watermarks_file from the manifest but still has the old sidecar on disk.
 	sidecarSet := map[string]struct{}{}
+	addSidecar := func(p string) {
+		if p == "" {
+			return
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(cfg.RepoPath, p)
+		}
+		sidecarSet[p] = struct{}{}
+	}
 	for _, entry := range m.Docs {
 		eff := effective.Resolve(cfg, explicit, m, entry)
-		if eff.WatermarksFile != "" {
-			p := eff.WatermarksFile
-			if !filepath.IsAbs(p) {
-				p = filepath.Join(cfg.RepoPath, p)
-			}
-			sidecarSet[p] = struct{}{}
-		}
+		addSidecar(eff.WatermarksFile)
+	}
+	addSidecar(m.Defaults.WatermarksFile)
+	for _, p := range cfg.MigrationSidecars {
+		addSidecar(p)
 	}
 	migrationSidecars := make([]string, 0, len(sidecarSet))
 	for k := range sidecarSet {
