@@ -192,6 +192,7 @@ top_p и пр.
 | `--code-search` | `MEMORIALISTE_CODE_SEARCH` | `false` | Дать LLM tool `search_code` (function calling) |
 | `--code-search-max-turns` | `MEMORIALISTE_CODE_SEARCH_MAX_TURNS` | `10` | Макс. число tool-call турниров до прерывания |
 | `--repo-meta` | `MEMORIALISTE_REPO_META` | `basic` | Уровень метаданных репо: `basic` или `extended` |
+| `--watermarks-file` | `MEMORIALISTE_WATERMARKS_FILE` | `""` | Сайдкар YAML с watermark-ами; пусто — watermark живёт во frontmatter |
 | `--platform` | `MEMORIALISTE_PLATFORM` | `gitlab` | `gitlab` или `github` |
 | `--platform-url` | `MEMORIALISTE_PLATFORM_URL` | дефолт платформы | Базовый URL для self-hosted инстансов |
 | `--platform-token` | `MEMORIALISTE_PLATFORM_TOKEN` | _обязателен (non-dry-run)_ | Токен доступа платформы |
@@ -216,6 +217,45 @@ generated_at: abc1234def5
 Тулза читает `generated_at` чтобы посчитать diff с прошлого запуска.
 Файл без frontmatter трактуется как никогда не генерированный (берётся
 полная история по путям `covers` этой записи).
+
+### Sidecar watermarks (чистый Markdown)
+
+Чтобы держать сгенерированный Markdown без frontmatter, укажите
+`watermarks_file` в манифесте (глобально в `defaults:` или per-entry):
+
+```yaml
+defaults:
+  watermarks_file: .memorialiste-watermarks.yaml
+docs:
+  - path: docs/architecture.md
+    covers: [internal/]
+```
+
+В sidecar-режиме doc-файл пишется как есть, а SHA `generated_at` для
+каждого файла лежит в YAML-сайдкаре:
+
+```yaml
+- path: docs/architecture.md
+  generated_at: abc1234def5
+```
+
+Миграция между режимами двунаправленная и бесшовная за один переходный
+прогон: если у doc есть frontmatter, но в сайдкаре нет записи — берётся
+frontmatter; если у doc нет frontmatter, но запись есть в чужом сайдкаре
+— берётся он. Следующая запись положит watermark в каноничное место,
+указанное манифестом.
+
+## Per-doc overrides
+
+Записи (и опциональный блок `defaults:`) могут переопределить поля,
+которые иначе берутся из CLI-флагов или env-переменных:
+
+`model`, `model_params`, `language`, `system_prompt`, `prompt`,
+`ast_context`, `code_search`, `code_search_max_turns`, `repo_meta`,
+`token_budget`, `watermarks_file`.
+
+Приоритет (по возрастанию): дефолты kong < manifest `defaults` < per-doc
+запись манифеста < env (`MEMORIALISTE_*`) < явно переданный CLI-флаг.
 
 ## Метаданные репозитория
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/inhuman/memorialiste/watermarks"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,84 @@ type frontmatter struct {
 // file at path. Returns ("", nil) when the file does not exist, has no
 // frontmatter, or the generated_at key is absent.
 func ReadWatermark(path string) (string, error) {
+	return ReadWatermarkSidecar(path, "", nil)
+}
+
+// readWatermarkForDoc is the sidecar-aware lookup used by Assemble. docDiskPath
+// is where to read the frontmatter from; wmKey is the lookup key used inside
+// any sidecar (typically repo-relative).
+func readWatermarkForDoc(docDiskPath, wmKey, sidecarPath string, migrationSidecars []string) (string, error) {
+	if sidecarPath != "" {
+		f, err := watermarks.Load(sidecarPath)
+		if err != nil {
+			return "", err
+		}
+		if v, ok := f.Lookup(wmKey); ok {
+			return v, nil
+		}
+		return readFrontmatter(docDiskPath)
+	}
+	v, err := readFrontmatter(docDiskPath)
+	if err != nil {
+		return "", err
+	}
+	if v != "" {
+		return v, nil
+	}
+	for _, sp := range migrationSidecars {
+		f, err := watermarks.Load(sp)
+		if err != nil {
+			return "", err
+		}
+		if got, ok := f.Lookup(wmKey); ok {
+			return got, nil
+		}
+	}
+	return "", nil
+}
+
+// ReadWatermarkSidecar returns the generated_at for docPath following the
+// migration decision tree in data-model.md:
+//
+//  1. sidecarPath != "":
+//     a. sidecar record for docPath → return it
+//     b. else doc frontmatter → return it
+//     c. else → return ""
+//  2. sidecarPath == "":
+//     a. doc frontmatter → return it
+//     b. else any record in migrationSidecars → return it
+//     c. else → return ""
+func ReadWatermarkSidecar(docPath, sidecarPath string, migrationSidecars []string) (string, error) {
+	if sidecarPath != "" {
+		f, err := watermarks.Load(sidecarPath)
+		if err != nil {
+			return "", err
+		}
+		if v, ok := f.Lookup(docPath); ok {
+			return v, nil
+		}
+		return readFrontmatter(docPath)
+	}
+	v, err := readFrontmatter(docPath)
+	if err != nil {
+		return "", err
+	}
+	if v != "" {
+		return v, nil
+	}
+	for _, sp := range migrationSidecars {
+		f, err := watermarks.Load(sp)
+		if err != nil {
+			return "", err
+		}
+		if got, ok := f.Lookup(docPath); ok {
+			return got, nil
+		}
+	}
+	return "", nil
+}
+
+func readFrontmatter(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

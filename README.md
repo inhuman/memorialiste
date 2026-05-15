@@ -186,6 +186,7 @@ All flags can be set via environment variables (uppercase snake_case with
 | `--code-search` | `MEMORIALISTE_CODE_SEARCH` | `false` | Expose the AST `search_code` tool to the LLM (function calling) |
 | `--code-search-max-turns` | `MEMORIALISTE_CODE_SEARCH_MAX_TURNS` | `10` | Max tool-call turns before aborting |
 | `--repo-meta` | `MEMORIALISTE_REPO_META` | `basic` | Repo metadata level: `basic` or `extended` |
+| `--watermarks-file` | `MEMORIALISTE_WATERMARKS_FILE` | `""` | Sidecar YAML file storing `generated_at` watermarks; when empty, watermarks live in doc frontmatter |
 | `--platform` | `MEMORIALISTE_PLATFORM` | `gitlab` | `gitlab` or `github` |
 | `--platform-url` | `MEMORIALISTE_PLATFORM_URL` | platform default | Base URL for self-hosted instances |
 | `--platform-token` | `MEMORIALISTE_PLATFORM_TOKEN` | _required (non-dry-run)_ | Platform access token |
@@ -210,6 +211,45 @@ generated_at: abc1234def5
 The tool reads `generated_at` to compute the diff since the last run.
 A file without frontmatter is treated as never generated (full-repo diff
 scoped to the entry's `covers` paths).
+
+### Sidecar watermarks (clean Markdown)
+
+To keep generated Markdown free of frontmatter, set `watermarks_file` in
+the manifest (globally under `defaults:` or per-entry):
+
+```yaml
+defaults:
+  watermarks_file: .memorialiste-watermarks.yaml
+docs:
+  - path: docs/architecture.md
+    covers: [internal/]
+```
+
+In sidecar mode each doc file is written verbatim and the
+`generated_at` SHA per file is stored in the sidecar YAML:
+
+```yaml
+- path: docs/architecture.md
+  generated_at: abc1234def5
+```
+
+Migration between modes is bidirectional and lossless in one transition
+run: if a doc has frontmatter but the sidecar lacks a record, the
+frontmatter is used; if the doc has no frontmatter but another entry's
+sidecar holds a record, that one is used. The next write places the
+watermark in the canonical location declared by the manifest.
+
+## Per-Doc Overrides
+
+Entries (and an optional `defaults:` block) may override the following
+fields, which are otherwise taken from CLI flags or env vars:
+
+`model`, `model_params`, `language`, `system_prompt`, `prompt`,
+`ast_context`, `code_search`, `code_search_max_turns`, `repo_meta`,
+`token_budget`, `watermarks_file`.
+
+Precedence (lowest → highest): kong defaults < manifest `defaults` <
+manifest per-doc entry < env var (`MEMORIALISTE_*`) < explicit CLI flag.
 
 ## Repository Metadata
 

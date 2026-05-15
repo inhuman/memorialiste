@@ -328,3 +328,34 @@ func TestValidate_NoTokenLeakage(t *testing.T) {
 		t.Errorf("token leaked: %s", err2.Error())
 	}
 }
+
+func TestParse_WatermarksFile_Default(t *testing.T) {
+	cfg, err := Parse(nil, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.WatermarksFile != "" {
+		t.Errorf("WatermarksFile default: got %q, want empty", cfg.WatermarksFile)
+	}
+}
+
+func TestParse_WatermarksFile_Env(t *testing.T) {
+	env := map[string]string{"MEMORIALISTE_WATERMARKS_FILE": ".wm.yaml"}
+	cfg, err := Parse(nil, mapGetenv(env))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.WatermarksFile != ".wm.yaml" {
+		t.Errorf("WatermarksFile env: got %q, want %q", cfg.WatermarksFile, ".wm.yaml")
+	}
+}
+
+func TestParse_WatermarksFile_Flag(t *testing.T) {
+	cfg, err := Parse([]string{"--watermarks-file=.flag.yaml"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.WatermarksFile != ".flag.yaml" {
+		t.Errorf("WatermarksFile flag: got %q, want %q", cfg.WatermarksFile, ".flag.yaml")
+	}
+}

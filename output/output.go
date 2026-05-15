@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/inhuman/memorialiste/watermarks"
 )
 
 // DefaultBranchPrefix is the default prefix for the auto-generated branch name.
@@ -29,6 +30,10 @@ type Entry struct {
 	// reviewers can tell at a glance which audience the MR/PR targets.
 	// Optional — empty audience falls back to the timestamp-only format.
 	Audience string
+	// WatermarksFile, when non-empty, switches this entry to sidecar mode:
+	// the doc file is written verbatim (no frontmatter) and the watermark
+	// is recorded in the YAML sidecar at this path.
+	WatermarksFile string
 }
 
 // Author is the commit identity used when the system creates a commit.
@@ -101,6 +106,14 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 	// --- Phase 1: classify entries (skip empty bodies, build write plan)
 	type plannedWrite struct {
 		absPath, relPath, body, sha, audience string
+		// originalPath is the entry.Path as declared (used as the sidecar
+		// record key so it is independent of repo location).
+		originalPath string
+		// watermarksFile, when non-empty, switches the write to sidecar mode.
+		// Absolute path on disk.
+		watermarksFile string
+		// watermarksRel is the sidecar's repo-relative path, used for staging.
+		watermarksRel string
 	}
 	var plan []plannedWrite
 	for _, e := range entries {
@@ -119,19 +132,57 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 		if relErr != nil {
 			relPath = e.Path
 		}
+		var wmAbs, wmRel string
+		if e.WatermarksFile != "" {
+			wmAbs = e.WatermarksFile
+			if !filepath.IsAbs(wmAbs) {
+				wmAbs = filepath.Join(opts.RepoPath, e.WatermarksFile)
+			}
+			if r, err := filepath.Rel(opts.RepoPath, wmAbs); err == nil {
+				wmRel = filepath.ToSlash(r)
+			} else {
+				wmRel = e.WatermarksFile
+			}
+		}
 		plan = append(plan, plannedWrite{
-			absPath:  absPath,
-			relPath:  filepath.ToSlash(relPath),
-			body:     e.Body,
-			sha:      e.HeadSHA,
-			audience: e.Audience,
+			absPath:        absPath,
+			relPath:        filepath.ToSlash(relPath),
+			body:           e.Body,
+			sha:            e.HeadSHA,
+			audience:       e.Audience,
+			originalPath:   e.Path,
+			watermarksFile: wmAbs,
+			watermarksRel:  wmRel,
 		})
+	}
+
+	// touchedSidecars maps sidecar absolute path → repo-relative path for
+	// later staging. Used for both dry-run (file write only) and non-dry-run.
+	touchedSidecars := map[string]string{}
+
+	writePlanned := func(p plannedWrite) error {
+		if p.watermarksFile == "" {
+			return writeFile(p.absPath, p.body, p.sha)
+		}
+		if err := writeFileNoFrontmatter(p.absPath, p.body); err != nil {
+			return err
+		}
+		wf, err := watermarks.Load(p.watermarksFile)
+		if err != nil {
+			return err
+		}
+		wf.Upsert(p.originalPath, p.sha)
+		if err := wf.Save(p.watermarksFile); err != nil {
+			return err
+		}
+		touchedSidecars[p.watermarksFile] = p.watermarksRel
+		return nil
 	}
 
 	// --- Dry-run: write files now, skip git ops
 	if opts.DryRun {
 		for _, p := range plan {
-			if err := writeFile(p.absPath, p.body, p.sha); err != nil {
+			if err := writePlanned(p); err != nil {
 				return nil, err
 			}
 			result.WrittenFiles = append(result.WrittenFiles, p.relPath)
@@ -193,7 +244,7 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 
 	// Phase 3: write files now that we're on the new branch
 	for _, p := range plan {
-		if err := writeFile(p.absPath, p.body, p.sha); err != nil {
+		if err := writePlanned(p); err != nil {
 			return nil, err
 		}
 		result.WrittenFiles = append(result.WrittenFiles, p.relPath)
@@ -203,6 +254,14 @@ func Apply(_ context.Context, opts Options, entries []Entry) (*Result, error) {
 	for _, relPath := range result.WrittenFiles {
 		if _, err := wt.Add(relPath); err != nil {
 			return nil, fmt.Errorf("output: stage %q: %w", relPath, err)
+		}
+	}
+	for _, sidecarRel := range touchedSidecars {
+		if sidecarRel == "" {
+			continue
+		}
+		if _, err := wt.Add(sidecarRel); err != nil {
+			return nil, fmt.Errorf("output: stage sidecar %q: %w", sidecarRel, err)
 		}
 	}
 

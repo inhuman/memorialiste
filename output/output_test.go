@@ -307,3 +307,96 @@ func TestApply_UnrelatedChangesPreserved(t *testing.T) {
 	status, _ := wt.Status()
 	assert.False(t, status.IsClean(), "unrelated change should remain in working tree")
 }
+
+// ── US5: sidecar watermark tests ──────────────────────────────────────────────
+
+func TestApply_Sidecar_NoFrontmatterInDoc(t *testing.T) {
+	dir := t.TempDir()
+	_, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   true,
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "# Title", HeadSHA: "sha1", WatermarksFile: ".watermarks.yaml"},
+	})
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(dir, "docs/a.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "# Title", string(got))
+	assert.NotContains(t, string(got), "---")
+}
+
+func TestApply_Sidecar_RecordUpserted(t *testing.T) {
+	dir := t.TempDir()
+	_, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		DryRun:   true,
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "# A", HeadSHA: "sha-A", WatermarksFile: ".watermarks.yaml"},
+	})
+	require.NoError(t, err)
+	data, err := os.ReadFile(filepath.Join(dir, ".watermarks.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "docs/a.md")
+	assert.Contains(t, string(data), "sha-A")
+}
+
+func TestApply_Sidecar_MultipleEntriesSameFile(t *testing.T) {
+	dir := t.TempDir()
+	_, err := output.Apply(context.Background(), output.Options{RepoPath: dir, DryRun: true}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: "shaA", WatermarksFile: ".w.yaml"},
+		{Path: "docs/b.md", Body: "B", HeadSHA: "shaB", WatermarksFile: ".w.yaml"},
+	})
+	require.NoError(t, err)
+	data, err := os.ReadFile(filepath.Join(dir, ".w.yaml"))
+	require.NoError(t, err)
+	s := string(data)
+	assert.Contains(t, s, "docs/a.md")
+	assert.Contains(t, s, "docs/b.md")
+}
+
+func TestApply_Sidecar_DifferentFilesPerDoc(t *testing.T) {
+	dir := t.TempDir()
+	_, err := output.Apply(context.Background(), output.Options{RepoPath: dir, DryRun: true}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: "shaA", WatermarksFile: ".wA.yaml"},
+		{Path: "docs/b.md", Body: "B", HeadSHA: "shaB", WatermarksFile: ".wB.yaml"},
+	})
+	require.NoError(t, err)
+	a, err := os.ReadFile(filepath.Join(dir, ".wA.yaml"))
+	require.NoError(t, err)
+	b, err := os.ReadFile(filepath.Join(dir, ".wB.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(a), "docs/a.md")
+	assert.NotContains(t, string(a), "docs/b.md")
+	assert.Contains(t, string(b), "docs/b.md")
+}
+
+func TestApply_Sidecar_StagedInCommit(t *testing.T) {
+	repo, dir := initRepoWithCommit(t)
+	headRef, _ := repo.Head()
+	res, err := output.Apply(context.Background(), output.Options{
+		RepoPath: dir,
+		Now:      fixedClock("20260514-130000"),
+	}, []output.Entry{
+		{Path: "docs/a.md", Body: "A", HeadSHA: headRef.Hash().String(), WatermarksFile: ".w.yaml"},
+	})
+	require.NoError(t, err)
+	commit, err := repo.CommitObject(plumbing.NewHash(res.CommitSHA))
+	require.NoError(t, err)
+	tree, err := commit.Tree()
+	require.NoError(t, err)
+	_, err = tree.File(".w.yaml")
+	require.NoError(t, err, "sidecar must be staged in commit")
+	_, err = tree.File("docs/a.md")
+	require.NoError(t, err)
+}
+
+func TestApply_FrontmatterMode_Unchanged(t *testing.T) {
+	dir := t.TempDir()
+	_, err := output.Apply(context.Background(), output.Options{RepoPath: dir, DryRun: true}, []output.Entry{
+		{Path: "docs/a.md", Body: "# Body", HeadSHA: "abc"},
+	})
+	require.NoError(t, err)
+	data, err := os.ReadFile(filepath.Join(dir, "docs/a.md"))
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(string(data), "---\ngenerated_at: abc\n---"))
+}

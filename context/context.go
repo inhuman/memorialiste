@@ -45,6 +45,19 @@ type Options struct {
 	// RepoMetaLevel controls how much repository metadata is collected and
 	// emitted in the LLM user message. Defaults to MetaBasic when empty.
 	RepoMetaLevel MetaLevel
+	// WatermarksFile is the sidecar YAML path for THIS doc. When non-empty,
+	// the watermark is read from (and later written to) the sidecar instead
+	// of the doc's frontmatter.
+	WatermarksFile string
+	// WatermarkKey is the lookup key inside a sidecar (typically the
+	// repo-relative doc path, matching what output.Apply uses). When empty,
+	// the doc file path passed to Assemble is used as the key.
+	WatermarkKey string
+	// MigrationSidecars is the union of sidecar paths used by ANY entry in
+	// the same run. Used for the reverse migration (sidecar → frontmatter):
+	// when WatermarksFile == "" and the doc has no frontmatter, these are
+	// consulted to recover the previous watermark.
+	MigrationSidecars []string
 }
 
 // DiffContext holds the assembled context for one doc entry.
@@ -77,7 +90,11 @@ func Assemble(ctx context.Context, entry manifest.DocEntry, opts Options) (*Diff
 	}
 	opts.RepoMetaLevel = cmp.Or(opts.RepoMetaLevel, MetaBasic)
 
-	watermark, err := ReadWatermark(entry.Path)
+	wmKey := opts.WatermarkKey
+	if wmKey == "" {
+		wmKey = entry.Path
+	}
+	watermark, err := readWatermarkForDoc(entry.Path, wmKey, opts.WatermarksFile, opts.MigrationSidecars)
 	if err != nil {
 		return nil, err
 	}

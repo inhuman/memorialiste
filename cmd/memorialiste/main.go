@@ -12,22 +12,37 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/inhuman/memorialiste/cliconfig"
 	mctx "github.com/inhuman/memorialiste/context"
+	"github.com/inhuman/memorialiste/effective"
 	"github.com/inhuman/memorialiste/generate"
 	"github.com/inhuman/memorialiste/manifest"
 	"github.com/inhuman/memorialiste/output"
 	"github.com/inhuman/memorialiste/platform"
 	"github.com/inhuman/memorialiste/platform/github"
 	"github.com/inhuman/memorialiste/platform/gitlab"
+	"github.com/inhuman/memorialiste/provider"
 	"github.com/inhuman/memorialiste/provider/openai"
 )
+
+// providerFactory builds the LLM provider for a single entry from the
+// resolved Effective config. Overridable by tests via newProviderFor.
+type providerFactory func(cfg *cliconfig.Config, eff effective.Effective) provider.Provider
+
+var newProviderFor providerFactory = func(cfg *cliconfig.Config, eff effective.Effective) provider.Provider {
+	return openai.New(openai.Config{
+		BaseURL:     cfg.ProviderURL,
+		Model:       eff.Model,
+		APIKey:      cfg.APIKey,
+		ModelParams: json.RawMessage(eff.ModelParams),
+	})
+}
 
 func main() {
 	cfg, err := cliconfig.Parse(os.Args[1:], os.Getenv)
 	if err != nil {
-		// *ValidationError already formats with "error: " prefix per line.
 		var vErr *cliconfig.ValidationError
 		if errors.As(err, &vErr) {
 			fmt.Fprintln(os.Stderr, err)
@@ -42,28 +57,52 @@ func main() {
 }
 
 func run(ctx context.Context, cfg *cliconfig.Config) error {
+	explicit := effective.DetectCLIExplicit(os.Args[1:])
+
 	m, err := manifest.Parse(cfg.DocStructure)
 	if err != nil {
 		return err
 	}
 	log.Printf("loaded %d doc entries from %s", len(m.Docs), cfg.DocStructure)
-	if cfg.CodeSearch {
-		log.Printf("code-search: enabled (max-turns=%d)", cfg.CodeSearchMaxTurns)
-	}
 
-	prov := openai.New(openai.Config{
-		BaseURL:     cfg.ProviderURL,
-		Model:       cfg.Model,
-		APIKey:      cfg.APIKey,
-		ModelParams: json.RawMessage(cfg.ModelParams),
-	})
+	// Collect distinct sidecar paths used by ANY entry for reverse-migration reads.
+	sidecarSet := map[string]struct{}{}
+	for _, entry := range m.Docs {
+		eff := effective.Resolve(cfg, explicit, m, entry)
+		if eff.WatermarksFile != "" {
+			p := eff.WatermarksFile
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(cfg.RepoPath, p)
+			}
+			sidecarSet[p] = struct{}{}
+		}
+	}
+	migrationSidecars := make([]string, 0, len(sidecarSet))
+	for k := range sidecarSet {
+		migrationSidecars = append(migrationSidecars, k)
+	}
+	slices.Sort(migrationSidecars)
 
 	var entries []output.Entry
 
 	for i, entry := range m.Docs {
+		eff := effective.Resolve(cfg, explicit, m, entry)
+		log.Printf("[%d/%d] %s effective: %s", i+1, len(m.Docs), entry.Path, eff.Diff(cfg))
+		if eff.CodeSearch {
+			log.Printf("[%d/%d] code-search: enabled (max-turns=%d)", i+1, len(m.Docs), eff.CodeSearchMaxTurns)
+		}
+
 		entryPath := entry.Path
 		if !filepath.IsAbs(entryPath) {
 			entryPath = filepath.Join(cfg.RepoPath, entry.Path)
+		}
+
+		var sidecarAbs string
+		if eff.WatermarksFile != "" {
+			sidecarAbs = eff.WatermarksFile
+			if !filepath.IsAbs(sidecarAbs) {
+				sidecarAbs = filepath.Join(cfg.RepoPath, eff.WatermarksFile)
+			}
 		}
 
 		log.Printf("[%d/%d] %s — assembling context", i+1, len(m.Docs), entry.Path)
@@ -73,10 +112,13 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			Audience:    entry.Audience,
 			Description: entry.Description,
 		}, mctx.Options{
-			RepoPath:      cfg.RepoPath,
-			TokenBudget:   cfg.TokenBudget,
-			ASTContext:    cfg.ASTContext,
-			RepoMetaLevel: mctx.MetaLevel(cfg.RepoMeta),
+			RepoPath:          cfg.RepoPath,
+			TokenBudget:       eff.TokenBudget,
+			ASTContext:        eff.ASTContext,
+			RepoMetaLevel:     mctx.MetaLevel(eff.RepoMeta),
+			WatermarksFile:    sidecarAbs,
+			WatermarkKey:      entry.Path,
+			MigrationSidecars: migrationSidecars,
 		})
 		if err != nil {
 			return fmt.Errorf("assemble %q: %w", entry.Path, err)
@@ -86,9 +128,9 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 
 		var metaBlock string
 		if dc.RepoMeta != nil {
-			metaBlock = dc.RepoMeta.Format(mctx.MetaLevel(cfg.RepoMeta))
+			metaBlock = dc.RepoMeta.Format(mctx.MetaLevel(eff.RepoMeta))
 			log.Printf("[%d/%d] meta: tag=%s sha=%s level=%s",
-				i+1, len(m.Docs), dc.RepoMeta.LatestTag, dc.RepoMeta.ShortSHA, cfg.RepoMeta)
+				i+1, len(m.Docs), dc.RepoMeta.LatestTag, dc.RepoMeta.ShortSHA, eff.RepoMeta)
 		}
 
 		if dc.Diff == "" {
@@ -96,16 +138,18 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			continue
 		}
 
-		log.Printf("[%d/%d] calling LLM (%s)", i+1, len(m.Docs), cfg.Model)
+		prov := newProviderFor(cfg, eff)
+
+		log.Printf("[%d/%d] calling LLM (%s)", i+1, len(m.Docs), eff.Model)
 		result, err := generate.Generate(ctx, generate.Input{
 			DocBody:      dc.DocBody,
 			Diff:         dc.Diff,
-			Language:     cfg.Language,
-			Prompt:       cfg.Prompt,
-			SystemPrompt: cfg.SystemPrompt,
+			Language:     eff.Language,
+			Prompt:       eff.Prompt,
+			SystemPrompt: eff.SystemPrompt,
 			RepoMeta:     metaBlock,
-			CodeSearch:   cfg.CodeSearch,
-			MaxTurns:     cfg.CodeSearchMaxTurns,
+			CodeSearch:   eff.CodeSearch,
+			MaxTurns:     eff.CodeSearchMaxTurns,
 			RepoRoot:     cfg.RepoPath,
 		}, prov)
 		if err != nil {
@@ -116,10 +160,11 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			result.TokenUsage.PromptTokens, result.TokenUsage.CompletionTokens, result.TokenUsage.TotalTokens)
 
 		entries = append(entries, output.Entry{
-			Path:     entry.Path,
-			Body:     result.Content,
-			HeadSHA:  dc.HeadSHA,
-			Audience: entry.Audience,
+			Path:           entry.Path,
+			Body:           result.Content,
+			HeadSHA:        dc.HeadSHA,
+			Audience:       entry.Audience,
+			WatermarksFile: eff.WatermarksFile,
 		})
 	}
 
