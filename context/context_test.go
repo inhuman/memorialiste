@@ -202,6 +202,50 @@ func TestDiff_EmptyWatermark_FullHistory(t *testing.T) {
 	assert.Contains(t, dc.Diff, "internal/foo.go")
 }
 
+// ── Sidecar watermark tests (US5) ────────────────────────────────────────────
+
+func TestReadWatermarkSidecar_SidecarMode_Hit(t *testing.T) {
+	dir := t.TempDir()
+	docPath := filepath.Join(dir, "doc.md")
+	require.NoError(t, os.WriteFile(docPath, []byte("# clean\n"), 0o644))
+	sidecar := filepath.Join(dir, "w.yaml")
+	require.NoError(t, os.WriteFile(sidecar, []byte("- path: "+docPath+"\n  generated_at: sha-side\n"), 0o644))
+	sha, err := mctx.ReadWatermarkSidecar(docPath, sidecar, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "sha-side", sha)
+}
+
+func TestReadWatermarkSidecar_SidecarMode_FallbackToFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	docPath := filepath.Join(dir, "doc.md")
+	require.NoError(t, os.WriteFile(docPath, []byte("---\ngenerated_at: sha-fm\n---\n\n# x\n"), 0o644))
+	sidecar := filepath.Join(dir, "w.yaml")
+	require.NoError(t, os.WriteFile(sidecar, []byte("- path: docs/other.md\n  generated_at: sha-other\n"), 0o644))
+	sha, err := mctx.ReadWatermarkSidecar(docPath, sidecar, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "sha-fm", sha)
+}
+
+func TestReadWatermarkSidecar_FrontmatterMode_FallbackToMigrationSidecars(t *testing.T) {
+	dir := t.TempDir()
+	docPath := filepath.Join(dir, "doc.md")
+	require.NoError(t, os.WriteFile(docPath, []byte("# no frontmatter\n"), 0o644))
+	sidecar := filepath.Join(dir, "w.yaml")
+	require.NoError(t, os.WriteFile(sidecar, []byte("- path: "+docPath+"\n  generated_at: sha-migrated\n"), 0o644))
+	sha, err := mctx.ReadWatermarkSidecar(docPath, "", []string{sidecar})
+	require.NoError(t, err)
+	assert.Equal(t, "sha-migrated", sha)
+}
+
+func TestReadWatermarkSidecar_NoSourcesAtAll(t *testing.T) {
+	dir := t.TempDir()
+	docPath := filepath.Join(dir, "doc.md")
+	require.NoError(t, os.WriteFile(docPath, []byte("# x\n"), 0o644))
+	sha, err := mctx.ReadWatermarkSidecar(docPath, "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "", sha)
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func writeTempFile(t *testing.T, content string) string {
