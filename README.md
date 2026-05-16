@@ -187,6 +187,9 @@ All flags can be set via environment variables (uppercase snake_case with
 | `--code-search-max-turns` | `MEMORIALISTE_CODE_SEARCH_MAX_TURNS` | `10` | Max tool-call turns before aborting |
 | `--repo-meta` | `MEMORIALISTE_REPO_META` | `basic` | Repo metadata level: `basic` or `extended` |
 | `--watermarks-file` | `MEMORIALISTE_WATERMARKS_FILE` | `""` | Sidecar YAML file storing `generated_at` watermarks; when empty, watermarks live in doc frontmatter |
+| `--llm-timeout` | `MEMORIALISTE_LLM_TIMEOUT` | `5m` | Per-request timeout for LLM provider HTTP calls (e.g. `5m`, `30s`, `10m30s`). Overridable per-doc via manifest `llm_timeout`. |
+| `--platform-timeout` | `MEMORIALISTE_PLATFORM_TIMEOUT` | `60s` | Per-request timeout for GitLab/GitHub HTTP calls and git push |
+| `--ast-parse-timeout` | `MEMORIALISTE_AST_PARSE_TIMEOUT` | `5s` | Per-file timeout for Go AST parsing inside the `search_code` tool |
 | `--platform` | `MEMORIALISTE_PLATFORM` | `gitlab` | `gitlab` or `github` |
 | `--platform-url` | `MEMORIALISTE_PLATFORM_URL` | platform default | Base URL for self-hosted instances |
 | `--platform-token` | `MEMORIALISTE_PLATFORM_TOKEN` | _required (non-dry-run)_ | Platform access token |

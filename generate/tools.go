@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/inhuman/memorialiste/codesearch"
 	"github.com/inhuman/memorialiste/provider"
@@ -36,12 +37,13 @@ var SearchCodeSchema = provider.ToolSchema{
 
 // dispatchSearchCode parses tool arguments, runs codesearch.Search, and
 // returns a JSON-encoded result ready to send back to the model.
-func dispatchSearchCode(ctx context.Context, call provider.ToolCall, repoRoot string) provider.ToolResult {
+func dispatchSearchCode(ctx context.Context, call provider.ToolCall, repoRoot string, parseTimeout time.Duration) provider.ToolResult {
 	var req codesearch.SearchRequest
 	if err := json.Unmarshal([]byte(call.Arguments), &req); err != nil {
 		return provider.ToolResult{CallID: call.ID, Content: errorJSON(fmt.Sprintf("invalid arguments: %v", err))}
 	}
 	req.RepoRoot = repoRoot
+	req.ParseTimeout = parseTimeout
 
 	result, err := codesearch.Search(ctx, req)
 	if err != nil {

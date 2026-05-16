@@ -34,6 +34,10 @@ type SearchRequest struct {
 	Pattern string `json:"pattern"`
 	// Limit caps the number of returned hits. 0 → DefaultLimit.
 	Limit int `json:"limit,omitempty"`
+	// ParseTimeout caps a single parser.ParseFile call. 0 → DefaultParseTimeout.
+	// Set by the dispatcher from cliconfig.Config.ASTParseTimeout; not exposed
+	// to the LLM tool schema.
+	ParseTimeout time.Duration `json:"-"`
 }
 
 // SearchHit is one matched declaration.
@@ -66,6 +70,7 @@ func Search(ctx context.Context, req SearchRequest) (*SearchResult, error) {
 	if limit <= 0 {
 		limit = DefaultLimit
 	}
+	parseTimeout := cmp.Or(req.ParseTimeout, DefaultParseTimeout)
 	repoRoot := cmp.Or(req.RepoRoot, ".")
 
 	absRoot, err := filepath.Abs(repoRoot)
@@ -100,7 +105,7 @@ func Search(ctx context.Context, req SearchRequest) (*SearchResult, error) {
 			res.FilesSkipped++
 			continue
 		}
-		file, err := parseGoFile(ctx, fset, path, src)
+		file, err := parseGoFile(ctx, fset, path, src, parseTimeout)
 		if err != nil {
 			res.FilesSkipped++
 			continue

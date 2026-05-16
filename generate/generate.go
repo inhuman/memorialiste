@@ -5,6 +5,7 @@ package generate
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/inhuman/memorialiste/provider"
 )
@@ -38,6 +39,9 @@ type Input struct {
 	// RepoRoot anchors the search_code tool to the local repository. Required
 	// when CodeSearch is true.
 	RepoRoot string
+	// ASTParseTimeout caps a single parser.ParseFile call inside the
+	// search_code tool. 0 → codesearch.DefaultParseTimeout.
+	ASTParseTimeout time.Duration
 }
 
 // Result is the output of a generation call.

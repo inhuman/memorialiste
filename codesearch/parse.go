@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"time"
 )
 
 // parseGoFile parses path with a per-file timeout. The underlying
@@ -12,8 +13,11 @@ import (
 // may outlive the call when parsing is genuinely slow — abandoning a
 // goroutine is acceptable here because it terminates as soon as parsing
 // finishes and is bounded by file size.
-func parseGoFile(parent context.Context, fset *token.FileSet, path string, src []byte) (*ast.File, error) {
-	ctx, cancel := context.WithTimeout(parent, DefaultParseTimeout)
+func parseGoFile(parent context.Context, fset *token.FileSet, path string, src []byte, timeout time.Duration) (*ast.File, error) {
+	if timeout <= 0 {
+		timeout = DefaultParseTimeout
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	type result struct {

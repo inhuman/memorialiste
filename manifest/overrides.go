@@ -15,4 +15,7 @@ type Overrides struct {
 	RepoMeta           string `yaml:"repo_meta,omitempty"`
 	TokenBudget        *int   `yaml:"token_budget,omitempty"`
 	WatermarksFile     string `yaml:"watermarks_file,omitempty"`
+	// LLMTimeout is a Go duration string (e.g. "5m", "30s", "10m30s").
+	// Empty = absent; parsed by effective.Resolve at merge time.
+	LLMTimeout string `yaml:"llm_timeout,omitempty"`
 }

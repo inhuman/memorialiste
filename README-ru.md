@@ -194,6 +194,9 @@ memorialiste \
 | `--code-search-max-turns` | `MEMORIALISTE_CODE_SEARCH_MAX_TURNS` | `10` | Макс. число tool-call итераций до прерывания |
 | `--repo-meta` | `MEMORIALISTE_REPO_META` | `basic` | Уровень метаданных репо: `basic` или `extended` |
 | `--watermarks-file` | `MEMORIALISTE_WATERMARKS_FILE` | `""` | Внешний YAML-файл с watermark'ами; пусто — watermark живёт во frontmatter |
+| `--llm-timeout` | `MEMORIALISTE_LLM_TIMEOUT` | `5m` | Таймаут одного HTTP-запроса к LLM (например `5m`, `30s`, `10m30s`). Переопределяется пер-док через `llm_timeout` в манифесте. |
+| `--platform-timeout` | `MEMORIALISTE_PLATFORM_TIMEOUT` | `60s` | Таймаут HTTP-запросов к GitLab/GitHub и `git push` |
+| `--ast-parse-timeout` | `MEMORIALISTE_AST_PARSE_TIMEOUT` | `5s` | Таймаут парсинга одного Go-файла внутри тула `search_code` |
 | `--platform` | `MEMORIALISTE_PLATFORM` | `gitlab` | `gitlab` или `github` |
 | `--platform-url` | `MEMORIALISTE_PLATFORM_URL` | дефолт платформы | Базовый URL для self-hosted инстансов |
 | `--platform-token` | `MEMORIALISTE_PLATFORM_TOKEN` | _обязателен (non-dry-run)_ | Токен доступа платформы |

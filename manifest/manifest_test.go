@@ -160,6 +160,34 @@ docs:
 	assert.Contains(t, err.Error(), "token_budget")
 }
 
+func TestParse_LLMTimeoutValid(t *testing.T) {
+	path := writeManifest(t, `
+defaults:
+  llm_timeout: 30s
+docs:
+  - path: docs/guide.md
+    covers: [internal/]
+    llm_timeout: 2m
+`)
+	m, err := manifest.Parse(path)
+	require.NoError(t, err)
+	assert.Equal(t, "30s", m.Defaults.LLMTimeout)
+	assert.Equal(t, "2m", m.Docs[0].LLMTimeout)
+}
+
+func TestParse_LLMTimeoutInvalid(t *testing.T) {
+	path := writeManifest(t, `
+docs:
+  - path: docs/guide.md
+    covers: [internal/]
+    llm_timeout: not-a-duration
+`)
+	_, err := manifest.Parse(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "llm_timeout")
+	assert.Contains(t, err.Error(), "docs/guide.md")
+}
+
 func TestParse_SystemPromptAtFile_Missing(t *testing.T) {
 	path := writeManifest(t, `
 docs:
