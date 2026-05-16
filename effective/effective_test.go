@@ -2,6 +2,7 @@ package effective_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/inhuman/memorialiste/cliconfig"
 	"github.com/inhuman/memorialiste/effective"
@@ -21,7 +22,54 @@ func baseCfg() *cliconfig.Config {
 		CodeSearch:         false,
 		CodeSearchMaxTurns: 10,
 		RepoMeta:           "basic",
+		LLMTimeout:         5 * time.Minute,
 	}
+}
+
+func TestResolve_LLMTimeout_OnlyCfg(t *testing.T) {
+	cfg := baseCfg()
+	eff := effective.Resolve(cfg, nil, &manifest.Manifest{}, manifest.DocEntry{})
+	assert.Equal(t, 5*time.Minute, eff.LLMTimeout)
+}
+
+func TestResolve_LLMTimeout_DefaultsApply(t *testing.T) {
+	cfg := baseCfg()
+	m := &manifest.Manifest{Defaults: manifest.Overrides{LLMTimeout: "30s"}}
+	eff := effective.Resolve(cfg, nil, m, manifest.DocEntry{})
+	assert.Equal(t, 30*time.Second, eff.LLMTimeout)
+}
+
+func TestResolve_LLMTimeout_PerDocOverridesDefaults(t *testing.T) {
+	cfg := baseCfg()
+	m := &manifest.Manifest{Defaults: manifest.Overrides{LLMTimeout: "30s"}}
+	entry := manifest.DocEntry{Overrides: manifest.Overrides{LLMTimeout: "2m"}}
+	eff := effective.Resolve(cfg, nil, m, entry)
+	assert.Equal(t, 2*time.Minute, eff.LLMTimeout)
+}
+
+func TestResolve_LLMTimeout_EnvOverridesManifest(t *testing.T) {
+	cfg := baseCfg()
+	m := &manifest.Manifest{Defaults: manifest.Overrides{LLMTimeout: "30s"}}
+	t.Setenv("MEMORIALISTE_LLM_TIMEOUT", "45s")
+	eff := effective.Resolve(cfg, nil, m, manifest.DocEntry{})
+	assert.Equal(t, 45*time.Second, eff.LLMTimeout)
+}
+
+func TestResolve_LLMTimeout_CLIExplicitWins(t *testing.T) {
+	cfg := baseCfg()
+	cfg.LLMTimeout = 10 * time.Minute
+	m := &manifest.Manifest{Defaults: manifest.Overrides{LLMTimeout: "30s"}}
+	entry := manifest.DocEntry{Overrides: manifest.Overrides{LLMTimeout: "2m"}}
+	t.Setenv("MEMORIALISTE_LLM_TIMEOUT", "45s")
+	eff := effective.Resolve(cfg, effective.CLIExplicit{"llm-timeout": true}, m, entry)
+	assert.Equal(t, 10*time.Minute, eff.LLMTimeout)
+}
+
+func TestResolve_LLMTimeout_InvalidManifestFallsThrough(t *testing.T) {
+	cfg := baseCfg()
+	m := &manifest.Manifest{Defaults: manifest.Overrides{LLMTimeout: "garbage"}}
+	eff := effective.Resolve(cfg, nil, m, manifest.DocEntry{})
+	assert.Equal(t, 5*time.Minute, eff.LLMTimeout)
 }
 
 func TestDetectCLIExplicit(t *testing.T) {

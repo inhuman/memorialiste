@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/alecthomas/kong"
 )
@@ -27,6 +28,10 @@ type Config struct {
 	BranchPrefix string `name:"branch-prefix" env:"MEMORIALISTE_BRANCH_PREFIX" default:"docs/memorialiste-" help:"Prefix for the auto-generated branch name" group:"Output"`
 	ASTContext   bool   `name:"ast-context"   env:"MEMORIALISTE_AST_CONTEXT"   default:"false"              help:"Enable AST-enriched diff context via grep-ast" group:"Output"`
 	RepoMeta     string `name:"repo-meta"     env:"MEMORIALISTE_REPO_META"     default:"basic"              help:"Repository metadata level in LLM context: basic (default) or extended" enum:"basic,extended" group:"Output"`
+
+	LLMTimeout      time.Duration `name:"llm-timeout"       env:"MEMORIALISTE_LLM_TIMEOUT"       default:"5m"  help:"Per-request timeout for LLM provider HTTP calls (e.g. 5m, 30s, 10m30s); overridable per-doc in manifest" group:"Provider"`
+	PlatformTimeout time.Duration `name:"platform-timeout"  env:"MEMORIALISTE_PLATFORM_TIMEOUT"  default:"60s" help:"Per-request timeout for GitLab/GitHub HTTP calls and git push" group:"Platform"`
+	ASTParseTimeout time.Duration `name:"ast-parse-timeout" env:"MEMORIALISTE_AST_PARSE_TIMEOUT" default:"5s"  help:"Per-file timeout for Go AST parsing inside the code-search tool" group:"Tools"`
 
 	WatermarksFile string `name:"watermarks-file" env:"MEMORIALISTE_WATERMARKS_FILE" default:"" help:"Sidecar YAML file storing generated_at watermarks; when empty, watermarks live in doc frontmatter" group:"Output"`
 

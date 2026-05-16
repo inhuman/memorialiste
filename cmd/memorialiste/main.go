@@ -37,6 +37,7 @@ var newProviderFor providerFactory = func(cfg *cliconfig.Config, eff effective.E
 		Model:       eff.Model,
 		APIKey:      cfg.APIKey,
 		ModelParams: json.RawMessage(eff.ModelParams),
+		Timeout:     eff.LLMTimeout,
 	})
 }
 
@@ -158,9 +159,10 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 			Prompt:       eff.Prompt,
 			SystemPrompt: eff.SystemPrompt,
 			RepoMeta:     metaBlock,
-			CodeSearch:   eff.CodeSearch,
-			MaxTurns:     eff.CodeSearchMaxTurns,
-			RepoRoot:     cfg.RepoPath,
+			CodeSearch:      eff.CodeSearch,
+			MaxTurns:        eff.CodeSearchMaxTurns,
+			RepoRoot:        cfg.RepoPath,
+			ASTParseTimeout: cfg.ASTParseTimeout,
 		}, prov)
 		if err != nil {
 			return fmt.Errorf("generate %q: %w", entry.Path, err)
@@ -203,6 +205,7 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 				Token:     cfg.PlatformToken,
 				ProjectID: cfg.ProjectID,
 				RepoPath:  cfg.RepoPath,
+				Timeout:   cfg.PlatformTimeout,
 			})
 		case "github":
 			plat = github.New(github.Config{
@@ -210,6 +213,7 @@ func run(ctx context.Context, cfg *cliconfig.Config) error {
 				Token:      cfg.PlatformToken,
 				Repository: cfg.ProjectID,
 				RepoPath:   cfg.RepoPath,
+				Timeout:    cfg.PlatformTimeout,
 			})
 		}
 

@@ -47,7 +47,7 @@ func runToolLoop(ctx context.Context, in Input, p provider.ToolingProvider, mess
 		for _, call := range step.ToolCalls {
 			totalCalls++
 			log.Printf("code-search: turn=%d name=%s args=%s", turn, call.Name, call.Arguments)
-			result := dispatchSearchCode(ctx, call, in.RepoRoot)
+			result := dispatchSearchCode(ctx, call, in.RepoRoot, in.ASTParseTimeout)
 			messages = append(messages, provider.Message{
 				Role:       "tool",
 				Content:    result.Content,

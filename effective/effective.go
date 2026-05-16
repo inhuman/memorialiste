@@ -2,9 +2,11 @@ package effective
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/inhuman/memorialiste/cliconfig"
 	"github.com/inhuman/memorialiste/manifest"
@@ -24,6 +26,7 @@ type Effective struct {
 	RepoMeta           string
 	TokenBudget        int
 	WatermarksFile     string
+	LLMTimeout         time.Duration
 }
 
 // CLIExplicit names the flags explicitly supplied on the command line
@@ -74,7 +77,33 @@ func Resolve(cfg *cliconfig.Config, cliExplicit CLIExplicit, m *manifest.Manifes
 		RepoMeta:           resolveString("repo-meta", "MEMORIALISTE_REPO_META", cfg.RepoMeta, cliExplicit, entryOv.RepoMeta, defaults.RepoMeta),
 		TokenBudget:        resolveInt("token-budget", "MEMORIALISTE_TOKEN_BUDGET", cfg.TokenBudget, cliExplicit, entryOv.TokenBudget, defaults.TokenBudget),
 		WatermarksFile:     resolveString("watermarks-file", "MEMORIALISTE_WATERMARKS_FILE", cfg.WatermarksFile, cliExplicit, entryOv.WatermarksFile, defaults.WatermarksFile),
+		LLMTimeout:         resolveDuration("llm-timeout", "MEMORIALISTE_LLM_TIMEOUT", cfg.LLMTimeout, cliExplicit, entryOv.LLMTimeout, defaults.LLMTimeout),
 	}
+}
+
+func resolveDuration(flag, envName string, cfgVal time.Duration, cli CLIExplicit, entry, def string) time.Duration {
+	if cli[flag] {
+		return cfgVal
+	}
+	if v := os.Getenv(envName); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+		log.Printf("warning: %s=%q is not a valid duration; falling through", envName, v)
+	}
+	if entry != "" {
+		if d, err := time.ParseDuration(entry); err == nil {
+			return d
+		}
+		log.Printf("warning: manifest per-doc %s=%q is not a valid duration; falling through", flag, entry)
+	}
+	if def != "" {
+		if d, err := time.ParseDuration(def); err == nil {
+			return d
+		}
+		log.Printf("warning: manifest defaults %s=%q is not a valid duration; falling through", flag, def)
+	}
+	return cfgVal
 }
 
 func resolveString(flag, envName, cfgVal string, cli CLIExplicit, entry, def string) string {
@@ -166,6 +195,9 @@ func (eff Effective) Diff(cfg *cliconfig.Config) string {
 	}
 	if eff.WatermarksFile != cfg.WatermarksFile {
 		parts = append(parts, "watermarks_file="+eff.WatermarksFile)
+	}
+	if eff.LLMTimeout != cfg.LLMTimeout {
+		parts = append(parts, "llm_timeout="+eff.LLMTimeout.String())
 	}
 	if len(parts) == 0 {
 		return "(global)"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -79,6 +80,12 @@ func validateOverrides(manifestPath, label string, o Overrides) error {
 	if o.TokenBudget != nil && *o.TokenBudget <= 0 {
 		return fmt.Errorf("manifest %q: %s: token_budget must be > 0 (got %d)",
 			manifestPath, label, *o.TokenBudget)
+	}
+	if o.LLMTimeout != "" {
+		if _, err := time.ParseDuration(o.LLMTimeout); err != nil {
+			return fmt.Errorf("manifest %q: %s: llm_timeout %q is not a valid Go duration (e.g. %q, %q): %w",
+				manifestPath, label, o.LLMTimeout, "5m", "30s", err)
+		}
 	}
 	if strings.HasPrefix(o.SystemPrompt, "@") {
 		p := strings.TrimPrefix(o.SystemPrompt, "@")

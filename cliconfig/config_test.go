@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/kong"
 )
@@ -41,6 +42,36 @@ func TestParse_DefaultsApply(t *testing.T) {
 	}
 	if cfg.Language != "english" {
 		t.Errorf("Language default: got %q", cfg.Language)
+	}
+	if cfg.LLMTimeout != 5*time.Minute {
+		t.Errorf("LLMTimeout default: got %v, expected 5m", cfg.LLMTimeout)
+	}
+	if cfg.PlatformTimeout != 60*time.Second {
+		t.Errorf("PlatformTimeout default: got %v, expected 60s", cfg.PlatformTimeout)
+	}
+	if cfg.ASTParseTimeout != 5*time.Second {
+		t.Errorf("ASTParseTimeout default: got %v, expected 5s", cfg.ASTParseTimeout)
+	}
+}
+
+func TestParse_TimeoutEnvOverrides(t *testing.T) {
+	env := map[string]string{
+		"MEMORIALISTE_LLM_TIMEOUT":       "90s",
+		"MEMORIALISTE_PLATFORM_TIMEOUT":  "2m",
+		"MEMORIALISTE_AST_PARSE_TIMEOUT": "1s",
+	}
+	cfg, err := Parse(nil, mapGetenv(env))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.LLMTimeout != 90*time.Second {
+		t.Errorf("LLMTimeout: got %v", cfg.LLMTimeout)
+	}
+	if cfg.PlatformTimeout != 2*time.Minute {
+		t.Errorf("PlatformTimeout: got %v", cfg.PlatformTimeout)
+	}
+	if cfg.ASTParseTimeout != time.Second {
+		t.Errorf("ASTParseTimeout: got %v", cfg.ASTParseTimeout)
 	}
 }
 
